@@ -1,12 +1,12 @@
 # Status
 
-**Last updated:** 2026-07-27 (project named `bnox`, git initialised)
+**Last updated:** 2026-07-27 (D-012 migration scope accepted; ALL blocking questions resolved; Phase 4 Decisions complete → ready for Phase 5 Base design)
 
 ## Current phase
 
-**Phase 2 of 6 — Requirements synthesis**
+**Phase 5 of 6 — Base design**
 
-Discovery of both existing systems is complete. Initial requirements list and comparison drafted. Awaiting user review before entering decisions phase.
+All blocking open questions resolved (D-001 through D-012 accepted). The architecture is fully specified. Ready to draft `process/06-base-design.md` (target flake + module layout) — translating the 12 decisions into concrete Nix code structure.
 
 ## What's done
 
@@ -18,31 +18,29 @@ Discovery of both existing systems is complete. Initial requirements list and co
 
 ## What's next
 
-1. User reviews `process/03-requirements.md` and `process/04-comparison.md`
-2. Resolve blocking open questions Q2–Q5 in `working/open-questions.md` (Q1 resolved → D-001 `bnox`):
-   - Q2 container runtime (Docker vs Podman)
-   - Q3 secrets manager (sops-nix vs agenix vs none)
-   - Q4 NixOS version pin (24.11 vs 25.05)
-   - Q5 migration scope (new only / retro-fit uqbn / retro-fit snowi-node)
+1. ~~Resolve blocking open questions~~ — **DONE** (D-001 through D-012)
+2. Draft `process/06-base-design.md` (target flake + module layout) — translate the 12 decisions into concrete Nix structure
+3. Draft `process/07-diversions.md` (per-host extension pattern)
+4. Implementation begins (writing `flake.nix`, modules, etc.)
 3. Walk through `process/05-decisions.md` one decision at a time
 4. Draft `process/06-base-design.md` (target flake + module layout)
 5. Draft `process/07-diversions.md` (per-host extension pattern)
 
 ## Blockers / waiting on
 
-- User input on Q2–Q5 above. No design work should proceed until at least Q2, Q3, Q4 are resolved.
+None. All blocking questions resolved. Awaiting user authorisation to begin Phase 5 (base design).
 
 ## Phase tracker
 
 | # | Phase | Status |
 |---|---|---|
 | 1 | Discovery | done |
-| 2 | Requirements | in progress (draft ready for review) |
-| 3 | Comparison | draft done (rolled into phase 2 above) |
-| 4 | Decisions | not started |
-| 5 | Base design | not started |
-| 6 | Diversions pattern | not started |
+| 2 | Requirements | done |
+| 3 | Comparison | done |
+| 4 | Decisions | **done** (D-001 through D-012 accepted) |
+| 5 | Base design | next |
+| 6 | Diversions pattern | pending |
 
 ## Decision count
 
-1 accepted (D-001 project name = `bnox`), 0 proposed, 7 open questions (4 blocking).
+9 accepted (D-001 `bnox`, D-002 Podman + Nix-only images, D-006 thing hosting, D-007 secrets Hybrid-1 + Hybrid-2-ready, D-008 host key = SSH host key, D-009 Hermes deviation, D-010 NixOS 26.05, D-011 webhook + NATS deployment, D-012 migration scope). **All blocking questions resolved.** Q6, Q8 non-blocking.

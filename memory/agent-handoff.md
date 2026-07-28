@@ -29,19 +29,37 @@ The two source repos:
 
 ## Current state (snapshot)
 
-(as of 2026-07-27)
-- Phase: **Requirements synthesis** (phase 2 of 6).
-- Discovery done for both source systems.
-- Requirements list (FR-1 through FR-13) and comparison drafted; awaiting user review.
-- 7 open questions (Q1 resolved → D-001 `bnox`); Q2–Q5 are blocking, Q6–Q8 are not.
+(as of 2026-07-27, end of session)
+- Phase: **Base design** (phase 5 of 6). Phase 4 (Decisions) complete.
+- **All blocking questions resolved.** 9 decisions accepted (D-001 through D-012).
+- Architecture fully specified — see `process/05-decisions.md` for the canonical log.
+- Next step: draft `process/06-base-design.md` (target flake + module layout), translating the 12 decisions into concrete Nix code structure.
+- Migration of uqbn / snowi-node is deferred (D-012) — not part of bnox itself.
+
+## Key user communication preferences (observed)
+
+- **Concise responses.** Prefer 1-3 sentences unless detail is requested. Tables OK.
+- **Don't railroad decisions.** Present tradeoffs honestly; don't push a "lean" as if it were the answer. Positive mentions of an option by the user are NOT commitments — explore fully.
+- **No comments in Nix files** (already in "How to behave" above; restated because it came up multiple times).
+- **Don't make decisions for the user.** Log decisions in `process/05-decisions.md` only after the user makes them. Leans and recommendations OK; frame them as leans, not conclusions.
+- **Update STATUS.md + memory/changelog.md whenever a decision lands or phase changes.** This is non-negotiable handoff hygiene.
+- **No emojis** unless explicitly requested.
 
 ## What an agent should NOT do
 
-- Don't start writing flake.nix / modules until decisions D-001 through D-005 are accepted.
-- Don't migrate uqbn or snowi-node until the user explicitly asks (Q5).
-- Don't edit uqbn's or snowi-node's actual repos as part of this design workspace — this folder is design only.
-- Don't add comments to Nix files (per user preference).
+- **Don't re-litigate settled decisions.** D-001 through D-012 are accepted; if you think one is wrong, raise it as a new open question rather than silently working around it.
+- **Don't write code yet** without first drafting `process/06-base-design.md` and getting user confirmation on the module layout.
+- **Don't migrate uqbn or snowi-node until the user explicitly asks** (D-012 — migration is deferred to a per-thing operator activity after bnox is built and validated).
+- Don't edit uqbn's or snowi-node's actual repos — this folder is design only.
 - Don't run `nixos-rebuild` against either source system without an explicit user request.
+- Don't add comments to Nix files.
+
+## Things to be aware of for Phase 5
+
+- **D-006 has pending refinements** (multi-component things, per-thing user isolation Q9.6, per-thing security model Q9.7, `daemon` shape Q9.8, `host-install` runtime Q9.9). These are locked in `working/open-questions.md` but will eventually be rolled into a superseding D-006.1. They're part of the design; treat them as accepted.
+- The decision log uses non-sequential numbering (D-001, D-002, D-006, D-007, D-008, D-009, D-010, D-011, D-012). The gaps (D-003, D-004, D-005) were reserved for original questions that got reframed and resolved under different numbers. Don't be confused by this.
+- `working/open-questions.md` is the authoritative source for all question state (resolved/locked/open). Read it before asking the user about anything.
+- The user is **collaborative and decisive** — they like to make decisions when given clear options. Don't over-explore; present the menu, get the pick, move on.
 
 ## File map
 

@@ -18,11 +18,7 @@ Append-only log of decisions made during this design process. New decisions go a
 
 These map to the blocking open questions in `working/open-questions.md`:
 
-- **D-002** Container runtime (Q2)
-- **D-003** Secrets manager (Q3)
-- **D-004** NixOS version pin (Q4)
-- **D-005** Migration scope (Q5)
-
+(All blocking questions resolved as of D-012. Q6, Q8 remain non-blocking.)
 ---
 
 ## D-001 — Project name
@@ -32,3 +28,358 @@ These map to the blocking open questions in `working/open-questions.md`:
 **Decision:** **`bnox`** — bh + nox (nix + night). Short, ends in OS-adjacent sound, distinctive.
 **Alternatives considered:** `baseos` (placeholder, generic), `noxos` (taken — active NoxOS-org on GitHub), `snowi-os` (too tied to one host), `bhos`, `keystone`, `rootstockos`, `nyxos`. Collision check ruled out `noxos`. `bnox` GitHub search returns only 8 weak results (file organizer, dormant crypto token, IMU sensor part number BNOx) — none in the OS / Nix space.
 **Consequences:** Directory is `/Users/bh/code/systems/bnox/`. Future flake will publish as `github:<user>/bnox`. The string `bnox` should appear in flake description, README title, hostname convention docs, and commit prefixes once code lands.
+
+---
+
+## D-002 — Container runtime and image-build policy
+**Date:** 2026-07-27
+**Status:** accepted
+**Context:** The base needs one container runtime and one image-build convention. Source systems diverge: snowi-node runs Podman + quadlets and builds images via Nix (`dockerTools.streamLayeredImage`, `packages/webapp.nix`); uqbn has Docker with three compose stacks under `docker/` that have never meaningfully been used. Discovery established that uqbn's `docker/` content is non-essential and carries **no migration barrier** — the base starts fresh. User also raised a hard constraint: image builds must be deterministic, which rules out `docker build` / Dockerfiles entirely.
+
+**Decision:**
+
+1. **Runtime: Podman** as the base default, via `virtualisation.podman.enable = true`.
+2. **Container declaration idiom: `virtualisation.oci-containers.containers`** (the runtime-agnostic NixOS abstraction), **not** raw quadlet text. `oci-containers` works under Podman today and under Docker tomorrow if a host ever needs it — flips with one option, no module rewrite.
+3. **Image-build policy: Nix only.** All container images must be produced by `pkgs.dockerTools.*` (`streamLayeredImage`, `buildImage`, `buildLayeredImage`). **Dockerfiles and `docker build` are forbidden in the base and in any host module.** This is a hard determinism requirement, not a preference.
+4. **`mkQuadlet` / `mkEnvFile` from `snowi-node/lib/default.nix` are NOT carried over.** They generate raw unit text, which duplicates what `oci-containers` already does in a typed way. Revisit only if we hit a case `oci-containers` cannot express.
+5. **No runtime switch in the base.** Podman is the default; a host that genuinely needs Docker declares `virtualisation.docker.enable = true` locally. The base does not pre-install or pre-configure Docker.
+
+**Alternatives considered:**
+
+- **Docker as base default** — rejected: daemon model is a worse fit for the systemd-native skeleton we're adopting from snowi-node; gives us nothing we need.
+- **Raw `mkQuadlet` helper from snowi-node** — rejected: less type-checked than `oci-containers`, and snowi-node itself is inconsistent (`modules/evolution-api.nix:60` already uses `oci-containers` alongside it). One idiom only.
+- **Base supports both runtimes via a switch** — rejected: premature. Optionality already exists because `oci-containers` is runtime-agnostic; formalising a switch adds abstraction cost now for a need that may never appear.
+- **Allow Dockerfiles for "one-off" images** — rejected by user constraint: non-deterministic builds are not acceptable in any form.
+
+**Consequences:**
+
+- Base flake inputs do **not** need a Docker-specific flake (uqbn currently pulls `portainer-flake`; bnox will not).
+- The `lib/default.nix` inherited from snowi-node is slimmed: `mkQuadlet` dropped, `mkEnvFile` retained only if a secrets-manager decision (D-003) wants env files as the delivery format.
+- Any future host wanting Portainer or a Docker-only image must justify it per-host, not in the base.
+- Documentation (`process/06-base-design.md` and per-service docs) must state the "Nix-only images" rule explicitly so contributors don't reach for a Dockerfile.
+- Reversibility: if Podman turns out wrong for some host, switching that host to Docker is a local change because `oci-containers` is runtime-agnostic. The base itself does not need to change.
+
+---
+
+## D-006 — Thing hosting architecture
+**Date:** 2026-07-27
+**Status:** accepted
+**Context:** snowi-node today bundles OS config + 17 NATS services + 2–4 webapps + 2 static sites + shared infra in a single repo. User requires the OS layer (bnox) to be deployable **independently of the application layer** — a change to a webapp, static site, or NATS processor batch must NOT trigger `nixos-rebuild`. Each "thing" lives in its own repo, git-synced to the host; things can depend on each other. Hard constraint from user: **"just basics, not hectic over-engineered."**
+
+**Decision:**
+
+1. **Thing taxonomy — three orthogonal axes:**
+   - **Provenance:** `first-party` (host owner builds & edits; git sync → rebuild) or `third-party` (external upstream; image pull on release).
+   - **Shape:** `static-site` (no backend; served by Caddy `file_server`) · `webapp` (HTTP with UI) · `http-api` (REST or WebSocket; no UI) · `nats-api` (a batch of NATS services sharing a stream/subject tree; multi-service; coined term).
+   - **Dependencies:** declared per-thing; bnox validates the graph.
+
+2. **Per-thing bnox-side declaration has two pieces:**
+   - **bnox-plumbing config** — what bnox needs to wire the thing into platform services (domain, ingress port, NATS subject prefix, deps). This is bnox-side integration; NOT the thing's own runtime config.
+   - **secrets slot** — shape filled in by future D-007 (Q11 secrets architecture); slot exists regardless.
+
+3. **Platform vs thing boundary:**
+   - **Platform** (bnox-owned, single instance per host, no per-thing config): **Caddy**, **NATS + JetStream**, **Podman** (per D-002), **static-site web server** (bnox serves files via Caddy `file_server`; no per-site container).
+   - **Things** (instance-configured, dependency-declaring): everything else — EvolutionAPI, xero-auth, Forgejo (if adopted), all webapps, all nats-apis, all http-apis. Each is first-party or third-party per axis 1.
+
+4. **NATS subject layout:**
+   - Top level reserved for host/ops/CQRS: **`host.>`** is bnox-owned.
+   - Things live under reserved namespace: **`things.<name>.>`**.
+   - The thing's repo owns everything beneath its prefix; bnox allocates the prefix and validates uniqueness across enabled things.
+
+5. **One JetStream stream per thing**, filtered on `things.<name>.>`. Streams do not cross thing boundaries. Each thing has its own retention policy.
+
+6. **Per-thing HTTP upstream port:** self-declared by the thing's repo; bnox fails evaluation on collision across enabled things.
+
+7. **Dependency graph validation at rebuild time.** Each thing's `deps = [ ... ]` is asserted against the set of enabled things; missing dep = loud rebuild failure. Same data translated to systemd `After=`/`Requires=` for runtime ordering.
+
+8. **Cross-thing stream access — start at L0:**
+   - **L0 (day 1, built):** bnox validates dep graph + systemd ordering; NATS itself is open locally (any local process can subscribe to anything).
+   - **L1 (future, additive, NOT built now):** per-thing NATS users restricted to `things.<self>.>`; cross-thing access via explicit grant derived from existing `deps` declarations.
+   - **L2 (out of scope for base):** NATS accounts.
+   - **The `deps` schema is designed so the L1 upgrade requires no schema change** — bnox just emits per-thing NATS creds from existing dep declarations.
+
+**Alternatives considered:**
+
+- **One repo for everything (snowi-node status quo):** rejected per user requirement — OS must be deployable independently.
+- **Kubernetes / Nomad / Argo / Flux:** rejected per user constraint ("just basics, not hectic over-engineered").
+- **Multiple NATS instances per thing:** rejected — wasteful; one shared instance with subject-prefix isolation is sufficient.
+- **NATS accounts (L2) day 1:** rejected — over-isolation for single-user base.
+- **bnox-allocated HTTP ports:** rejected — ports are a thing-internal concern; bnox just needs to know what to point Caddy at. Self-declaration is simpler; collision check covers the failure mode.
+- **Convention-only dependency declaration (no evaluation-time validation):** rejected — silent runtime failures are worse than loud rebuild failures.
+- **Static-site web server as a per-site thing:** rejected — bnox serving files via Caddy `file_server` is simpler; one fewer container per site.
+
+**Consequences:**
+
+- bnox provides a generic **"host a thing" abstraction** (`bnox.things.<name> = { ... }`) — this is the load-bearing piece of the application-layer hosting model.
+- Each thing lives in its own repo, git-synced to a per-thing directory on the host.
+- The thing's repo contains: code, Nix derivation building its image, its internal NATS sub-subject tree beneath its allocated prefix, its internal env file structure, its own runtime config.
+- bnox validates: subject-prefix uniqueness, port uniqueness, dependency graph closure.
+- Static sites need no per-site container — files served directly by Caddy.
+- Per-thing NATS user management is NOT implemented now, but the `deps` field design must support emitting creds later without schema change.
+- Migration of existing snowi-node content onto this model is governed by Q5 (D-005 migration scope) — NOT part of this decision.
+- The deployment mechanism (git sync → build → reload) is governed by Q13 — NOT part of this decision.
+
+**Still open (NOT covered by this decision):**
+
+- **Q9.5 (new):** Where does the per-thing bnox-side declaration live — all in bnox host config (option a), all in thing's repo (option b), or hybrid (thing repo declares shape+deps; bnox host flips enable, option c)?
+- **Q11 / D-007:** Secrets architecture — determines the shape of the `secrets` slot in the per-thing declaration.
+- **Q13 / D-008:** Deployment mechanism — the git-sync/build/reload flow this architecture presupposes.
+
+---
+
+## D-007 — Secrets architecture (Hybrid-1 default, Hybrid-2-ready abstraction)
+**Date:** 2026-07-27
+**Status:** accepted
+**Context:** User requires that changing a thing's secrets must NOT trigger a host rebuild. This rules out pure push-at-deploy (agenix or sops-nix alone), which decrypt at `nixos-rebuild` activation. The chicken-and-egg constraint (some secrets — host key, Caddy TLS, NATS auth — must be available before any runtime service can run) means a pure pull-at-runtime design is impossible: infra secrets must be push-at-deploy. The Q9.5 slot contract (thing declares slot names, host binds sources) is mechanism-agnostic and supports swappable backends. bnox is intended as a reusable base — different users may legitimately want different backends, so the choice must be config-time, not code-time.
+
+**Decision:**
+
+1. **Two-layer secrets architecture.**
+   - **Infra layer** (host key, Caddy TLS, NATS auth, age key): push-at-deploy via **agenix**. Encrypted-in-git, decrypted at `nixos-rebuild` activation. Changes require a host rebuild; these secrets change rarely.
+   - **Things layer** (per-thing app secrets): swappable backend, chosen at bnox config time per host.
+
+2. **Things-layer backend is a config-time choice.** bnox ships with two backend implementations; users adopt whichever fits their setup:
+   - **`file` backend (Hybrid-1, default):** secrets are plaintext files under `/var/lib/bnox/secrets/<thing>/<slot>`. A systemd-path unit watches each file; on change, the thing's container restarts. Update flow: operator writes the new value (via SSH, scp, or a small CLI), saves, systemd-path fires. No host rebuild.
+   - **`nats-kv` backend (Hybrid-2, optional):** secrets stored in NATS KV under `secrets/things/<thing>/<slot>`, encrypted with the host key. A secrets-service daemon fetches on demand and on watch, decrypts, writes to local paths, restarts affected things. Update flow: write to NATS KV from any authenticated client. No host rebuild, no SSH required. **Designed-for, not built day-1.**
+
+3. **Slot contract is identical across backends** (per Q9.5). Things declare slot names in `.bnox/`; bnox host config binds slots. The slot name is the key; the backend decides where the value comes from. Things and host configs do not change when backend changes.
+
+4. **agenix chosen for infra layer** (closes Q3). Reasoning: SSH host key reuse fits the existing hardened-SSH setup; one-file-per-secret matches the existing per-thing env-file pattern; smaller surface area than sops-nix; off-the-shelf.
+
+5. **Default backend = `file` (Hybrid-1).** Rationale: day-1 single-host; "just basics" guardrail (Q14); familiar pattern (matches snowi-node today, formalized with auto-reload); smallest build cost. NATS-KV's advantages only materialize with multi-host or centralised update needs.
+
+**Alternatives considered:**
+
+- **Pure push-at-deploy (agenix only):** rejected — violates user requirement that secret changes not trigger host rebuild.
+- **Pure pull-at-runtime (NATS-KV only):** rejected — chicken-and-egg; infra secrets have no NATS to fetch from.
+- **Custom push-without-rebuild tooling:** rejected — non-standard agenix workflow, custom work for marginal benefit.
+- **sops-nix for infra layer:** rejected — agenix's SSH-host-key reuse is a better fit; sops-nix's extra features (KMS, templating) not needed.
+- **Building the `nats-kv` backend day-1:** rejected — Q14 over-engineering guardrail; day-1 single-host doesn't justify ~200 LOC custom service. Designed-for is enough.
+
+**Consequences:**
+
+- bnox flake inputs: **+1 (agenix)**.
+- bnox module structure: `secrets/` directory containing `infra.nix` (agenix wiring), `backends/file.nix` (default), `backends/nats-kv.nix` (scaffolded interface, not implemented).
+- Per-thing: each enabled thing gets one or more systemd-path units watching its declared secret slots (under the `file` backend).
+- Host config: `bnox.secrets.thingsBackend = "file"` (default) or `"nats-kv"` (when implemented).
+- **Q3 resolved → agenix** for the infra layer.
+- **Q11 resolved.**
+- **Q12 still open** (host encryption key home) — tightly coupled; needs resolution before D-007 is fully implementable.
+- Future D-NNN will specify the `nats-kv` backend implementation when multi-host or central-update becomes a real need.
+- Migration of existing snowi-node secrets (currently plaintext at `/var/lib/`) is trivial under the `file` backend — same pattern, plus auto-reload.
+
+---
+
+## D-008 — Host encryption key home
+**Date:** 2026-07-27
+**Status:** accepted
+**Context:** D-007 requires a host-level key to decrypt secrets — both agenix (infra layer) and the future `nats-kv` backend (things layer option). The original Q12 recommendation (plain file at `/var/lib/bnox/host-key`) was framed before D-007 picked agenix. With agenix, the simpler answer is to reuse the existing SSH host key.
+
+**Decision:**
+
+1. **Host encryption key = SSH host key** (`/etc/ssh/ssh_host_ed25519_key` by default). No separate bnox-managed key.
+2. **agenix reads it via `age.sshKeyPaths`** (agenix's documented default pattern).
+3. **Future `nats-kv` backend** (D-007 Hybrid-2) derives its decryption key from the same SSH host key via age. No second key.
+4. **Provisioning:** SSH host key generated on first boot OR injected via `nixos-anywhere` at provisioning — matches snowi-node's existing pattern.
+5. **Recovery:** every agenix-encrypted secret carries a **second age recipient** (a recovery key held off-host, e.g. on the operator's workstation or in a password manager). Lose the host key → re-encrypt against the recovery key on a new host. **Backups of `/etc/ssh/` are NOT the recovery path** — the recovery recipient is.
+6. **Rotation:** rotating the SSH host key requires re-encrypting every agenix secret. Standard agenix pain; rare operation; documented procedure (regenerate SSH host key, update `.age` recipient list, re-encrypt all secrets, commit, rebuild).
+7. **TPM path:** documented as a future hardware-host enhancement (laptop/desktop profile). VPS hosts have no TPM; out of scope day-1.
+
+**Alternatives considered:**
+
+- **Separate age key at `/var/lib/bnox/host-key`:** rejected — adds a key to provision/back up/rotate for no real isolation benefit on a single-host threat model (root compromise exposes both keys regardless).
+- **TPM-sealed key:** rejected for day-1 — VPS hosts have no TPM. Documented as future hardware-host path.
+- **Derived from a provisioning-time injected seed:** rejected — adds reproducibility complexity; the recovery recipient already covers key loss without this.
+- **Backups of `/etc/ssh/` as recovery:** rejected as primary path — the recovery recipient is cleaner (off-host, no dependence on filesystem backup integrity).
+
+**Consequences:**
+
+- No new bnox-managed key files; one less moving part.
+- `.sops.yaml`-equivalent for agenix (the `secrets.nix` or `rules.nix` file) must list both the host SSH key and the recovery key as recipients for every secret.
+- Operator must generate and securely store one recovery age key (workstation-side) before first bnox deployment. This is the bootstrap cost.
+- Q12 resolved.
+- D-007 + D-008 together fully specify the secrets architecture for implementation.
+
+---
+
+## D-009 — Hermes agent deviation (Q14 escape hatch used)
+**Date:** 2026-07-27
+**Status:** accepted
+**Context:** User wants to host a Hermes agent (Nous Research, MIT, v0.19.0) on the bnox system. Hermes is a long-running AI agent that connects outward to messaging platforms (Telegram, Discord, Slack, etc.) and LLM APIs. Its distribution model is fundamentally imperative: `curl|bash` install script, manages its own Python (via uv) and Node.js, downloads Playwright/Chromium, and **self-updates via `hermes update`**. Forcing it into a Nix-built container image would: break the auto-update model; require repackaging on every upstream release; require vendoring all Python deps, Playwright, Node, Chromium; be a multi-week effort that recurs every release. This is exactly the case the Q14 deviation clause ("a specific thing may deviate when it has a justified need; deviations are raised as an open question and logged as a decision before adoption") exists for.
+
+**Decision:**
+
+1. **Hermes is hosted as a `daemon`-shape thing with `host-install` runtime** (both new — see Q9.8 and Q9.9 below). It runs on host (not in a container), under a dedicated `hermes` user, managed by a systemd service that invokes Hermes' gateway.
+
+2. **Deviation scope is narrow and explicit.** This decision authorises **only** that D-002's "images must be Nix-built via `dockerTools.*`" rule does not apply to Hermes. Every other decision (D-006 thing architecture, D-007 secrets via `file` backend, Q9.6 user isolation, Q9.7 hardening bundle, Q14 default ceiling for all other things) applies to Hermes unchanged.
+
+3. **bnox's role for Hermes:**
+   - Creates the `hermes` user (Q9.6).
+   - Provides `$HERMES_HOME` at `/var/lib/hermes/`, owned by `hermes`.
+   - Runs the upstream install script once (manually, at provisioning) under the `hermes` user — NOT via Nix derivation.
+   - Provides a systemd unit `hermes.service` that runs the gateway as `hermes`, with the standard Q9.7 hardening bundle plus network egress to required destinations (HTTPS outbound, DNS).
+   - Provides secrets via D-007 `file` backend at `/var/lib/bnox/secrets/hermes/<slot>`, chown'd to `hermes`.
+   - Does NOT manage Hermes updates — `hermes update` is run by the operator (or a cron job) as the `hermes` user. bnox treats Hermes as a self-managing black box.
+
+4. **Hermes manages its own:**
+   - Code (git checkout at `/var/lib/hermes/hermes-agent/`)
+   - Python virtualenv (managed by uv)
+   - Node.js (downloaded by install script)
+   - Playwright/Chromium
+   - State, sessions, memory, skills (`$HERMES_HOME`)
+   - Updates (`hermes update`)
+
+5. **Justification logged per Q14:** Hermes' upstream distribution and auto-update model is the load-bearing fact. Fighting it with Nix packaging is a recurring multi-week cost. The deviation is visible (this entry) and scoped (only Hermes; only the image-build rule).
+
+**Alternatives considered:**
+
+- **Nix-package Hermes properly:** rejected — recurring multi-week effort every release; breaks `hermes update`; Playwright packaging is notoriously painful.
+- **Container with non-Nix image build (Option B):** rejected — corrupts D-002 more broadly (the entire image build is non-deterministic, vs. just an install path on host); still breaks `hermes update` inside immutable image.
+- **Don't host Hermes on bnox:** rejected — doesn't meet user's stated goal.
+
+**Consequences:**
+
+- D-002 unchanged for all things except Hermes.
+- Hermes appears in bnox host config as a `daemon`-shape thing with `runtime = "host-install"`.
+- Hermes receives the standard Q9.6 user isolation + Q9.7 hardening bundle. Network egress restricted to required destinations (HTTPS, DNS) via systemd `IPAddressDeny=any` + `IPAddressAllow=`.
+- Hermes' subagent sandbox backends (Docker, SSH, Singularity, Modal) are restricted to `local` only — no Docker socket exposure, no SSH backend. Configured in Hermes' config, enforced by absence of those capabilities in the systemd unit.
+- Operator runs `sudo -u hermes hermes update` periodically (or schedules it via systemd timer). bnox does not manage Hermes version.
+- The deviation is reviewed if Hermes' distribution model changes (e.g. they ship a Nix derivation or pre-built reproducible images).
+
+**Supporting refinements (locked alongside this decision):**
+
+### Q9.8 — New shape: `daemon` (refinement to D-006, locked)
+
+Locked alongside D-009. The shape taxonomy (D-006) gets a fifth entry: **`daemon`** — long-running stateful process; no inbound HTTP/NATS interface required; initiates outbound connections; may have its own state directory and update mechanism. Examples: AI agents (Hermes), bots, polling integrations, scheduled job runners. A thing can still be multi-component, so e.g. `daemon` + `http-api` is valid (background agent + HTTP control surface).
+
+### Q9.9 — New runtime option: `host-install` (refinement to D-006, locked)
+
+Locked alongside D-009. The thing-hosting abstraction (D-006) implied `oci-containers`. Refinement: each component has an orthogonal `runtime` field — `container` (default, Nix-built image per D-002) or `host-install` (thing manages its own installation in its user space, bnox provides only the user + systemd unit + secrets slot + hardening). `host-install` is rare and requires a Q14 deviation per thing; Hermes is the first.
+
+### Q14 — Over-engineering guardrail (resolved)
+
+**Resolved 2026-07-27.** Captured as NFR-6 in `process/03-requirements.md` (to be added):
+
+> **NFR-6 — Deployment simplicity ceiling (default; deviations allowed with justification).** Default: application-layer deployment (per D-006) is implementable using only **Podman, systemd, git, and optionally Forgejo**. Per-thing overhead **≤ 3 systemd units** (container + git-sync + build-trigger). Rollback via `podman load` of prior image + `systemctl restart` — no separate rollback tooling. By default forbidden: Kubernetes, Nomad, Argo CD, Flux, Helm, any framework with its own control plane. **A specific thing may deviate** when it has a justified need; deviations are raised as an open question and logged as a decision (D-NNN) before adoption — not silent.
+
+D-009 (Hermes) is the first use of this deviation clause.
+
+---
+
+## D-010 — NixOS version pin and channel choice
+**Date:** 2026-07-27
+**Status:** accepted
+**Context:** bnox needs a pinned nixpkgs input. The original Q4 analysis (recommending 24.11 for parity with snowi-node) was written when 24.11 was current; as of 2026-07-27, both source systems run EOL NixOS (24.11 EOL'd 2025-06-30, 25.05 EOL'd 2025-12-31, 25.11 just EOL'd 2026-06-30). The only currently-supported stable release is 26.05. User confirmed: latest stable is the right choice unless there's a specific reason to stay on an old release — and there isn't.
+
+**Decision:**
+
+1. **NixOS version pin: `nixos-26.05`** (current stable).
+   ```nix
+   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
+   ```
+2. **Channel: full (no `-small`).** `nixos-26.05-small` exists for pure-headless scenarios where the excluded packages (desktop apps, some bigger GUI things) are never needed; bnox is a general-purpose base and should not pre-emptively exclude packages.
+3. **Bump cadence:** every 6 months when a new stable ships (next: 26.11 in ~Nov 2026), update the pin and rebuild. Standard NixOS hygiene.
+
+**Alternatives considered:**
+
+- **24.11 (snowi-node's pin):** rejected — EOL 13 months. The "production parity" argument that originally supported this is moot; snowi-node itself needs upgrading.
+- **25.05 (uqbn's pin):** rejected — EOL 7 months.
+- **25.11:** rejected — just went EOL.
+- **`nixos-unstable` (rolling):** rejected — bleeding edge; not appropriate for a base OS that should be predictable.
+- **`-small` channel:** rejected — excludes packages that might be needed (desktop profile, future things); fetch time isn't a real bottleneck with binary caches.
+
+**Consequences:**
+
+- bnox flake input pinned to `nixos-26.05`.
+- snowi-node migration (if/when undertaken, per Q5) requires jumping 24.11 → 26.05 — two major releases of catch-up (24.11 → 25.05 → 25.11 → 26.05). Non-trivial; weighs against Option B in Q5.
+- uqbn migration (if/when undertaken) requires jumping 25.05 → 26.05 — one major release. Easier; supports Option C in Q5.
+- All other decisions (D-002, D-006, D-007, D-008, D-009) are version-agnostic and unaffected.
+- Q4 + Q7 both resolved.
+
+---
+
+## D-011 — App-layer deployment mechanism
+**Date:** 2026-07-27
+**Status:** accepted
+**Context:** D-006 specifies what a "thing" is and how bnox hosts it; Q13 specifies the **dynamic** flow — how a thing's code changes propagate from a git push to a running container without an OS rebuild (per the user's hard constraint). NFR-6 (Q14) caps complexity at ≤ 3 systemd units per thing, no orchestration frameworks. NATS already exists as platform infra (D-006), making an event-driven pipeline natural. Hermes (D-009) is explicitly excluded — it self-manages via `hermes update`.
+
+**Decision:**
+
+1. **Trigger mechanism: webhook + NATS event bus.** A single bnox-owned `bnox-webhook-receiver.service` receives push events from GitHub/Forgejo (via Caddy vhost) and publishes to NATS. Per-thing sync/build/container units subscribe to NATS subjects and execute their step, publishing progress as they go.
+
+2. **Event subjects under `host.deploy.<name>.*`** (host-level, per D-006's reserved `host.>` namespace):
+   - `host.deploy.<name>.changed` — webhook received
+   - `host.deploy.<name>.synced` — git pull done (with new SHA)
+   - `host.deploy.<name>.built` — image built and loaded (with image hash)
+   - `host.deploy.<name>.deployed` — container restarted
+   - `host.deploy.<name>.failed` — failure at any step (with reason)
+
+3. **JetStream persistence** via `host-deploy-logs` stream filtered on `host.deploy.>` — full audit trail of every deployment across every thing. Subscribe to `host.deploy.>` for real-time visibility.
+
+4. **Pipeline shape per thing** (3 functional units, fits NFR-6):
+   - `<name>-sync.service` — subscribes to `.changed`; runs `git fetch && git reset --hard origin/main`; publishes `.synced`.
+   - `<name>-build.service` — subscribes to `.synced`; runs `nix build` for each component's image, pipes to `podman load`; publishes `.built`; restarts container(s) via `systemctl restart`; publishes `.deployed`.
+   - `<name>-container.service` (or N container services for multi-component) — the `oci-containers` entry itself; plain systemd service, no NATS awareness needed.
+   - Plus one global `bnox-webhook-receiver.service` (bnox-owned, not per-thing).
+
+5. **Multi-component things:** one sync + one build per thing (the build rebuilds **all** components in one pass); one container service per component. A 3-component thing has 1 + 1 + 3 = 5 units. Acceptable Q14-noted variance: the ceiling is per-thing for single-component; multi-component naturally needs more container units.
+
+6. **Build location: both patterns supported day-1, per-thing choice.**
+   - **Pattern A — on-host (default):** `<name>-build.service` runs `nix build` locally and pipes to `podman load`. No extra infrastructure.
+   - **Pattern B — off-host + registry:** an external builder (Forgejo Actions, separate machine) builds and pushes to a container registry; host runs `podman auto-update` on a timer or the build-unit subscribes to a "remote-built" event.
+   - Thing declares its build pattern in `.bnox/`: `build = "on-host"` (default) or `"off-host"` or `"both"`.
+
+7. **Build invocation: standard command, owned by bnox.** The thing's flake must expose `images.<system>.<component>` for each declared component (where `<component>` matches the names in `.bnox/<component>.nix`). bnox's build unit invokes `nix build /srv/<name>#images.x86_64-linux.<component>` uniformly across all things. Thing authors do Nix work in their own repo; bnox handles invocation. Non-standard builds require Q14 deviation.
+
+8. **Rollback: last 3 image tarballs per thing.** Built tarballs retained at `/var/lib/<thing>/images/<git-sha>.tar`. Rollback = `podman load /var/lib/<thing>/images/<prior-sha>.tar` + `systemctl restart <thing>-container.service`. A daily systemd timer prunes to last 3.
+
+**Alternatives considered:**
+
+- **Polling instead of webhook:** rejected — slower feedback; NATS bus already available makes webhook trivially easy.
+- **Webhook → directly invoke build (no NATS):** rejected — loses observability and decoupling; sync/build/restart can't be observed or intervened on independently.
+- **Build on host only (no off-host option):** rejected — Pattern B is cheap to support day-1 (same units, different trigger) and the user explicitly wanted both available.
+- **Custom build script per thing:** rejected — loses consistency; standard flake schema (`images.<system>.<component>`) is simple enough for any reasonable thing.
+- **Rollback via separate tooling:** rejected per NFR-6 — `podman load` + `systemctl restart` is sufficient.
+
+**Consequences:**
+
+- bnox module `deployment/` contains: `webhook-receiver.nix` (global), `pipeline.nix` (per-thing sync + build units), `container.nix` (oci-containers wiring).
+- bnox flake input: `nats-server` already covered (D-006 platform); no new inputs.
+- Each thing's repo must expose the standard flake schema: `images.<system>.<component>` for each component.
+- Caddy gets a `/bnox/webhook` vhost (or per-host webhook path) that proxies to the webhook receiver. Authentication via per-thing HMAC secrets (stored via D-007 `file` backend).
+- Webhook receiver needs GitHub/Forgejo to know the host's webhook URL — either public Caddy vhost or Tailscale Funnel for non-public hosts. Documented per-host.
+- Q13 resolved. Architecture track complete (Q9 → D-006, Q11 → D-007, Q12 → D-008, Q14 → NFR-6, Q4 → D-010, Q13 → D-011). Only Q5 (migration scope) remains blocking.
+
+---
+
+## D-012 — Migration scope
+**Date:** 2026-07-27
+**Status:** accepted
+**Context:** Q5 asked whether bnox is for new systems only, retro-fits uqbn, or retro-fits snowi-node. User clarified: **bnox itself is the priority — finalize it as a standalone base first, without baggage from either source system.** Migration is a separate later phase, handled per-thing with a keep/migrate/toss decision for each. uqbn is the first migration target because the user wants to wipe the MacBook and replace uqbn with bnox, then selectively choose what to put on it (Hermes included; other uqbn content not critical and may be discarded). snowi-node migration is long-term, no urgency.
+
+**Decision:**
+
+1. **Phase 1 — Build bnox standalone.** Implement the base as specified by D-001 through D-011. No source-system-specific code, no migration shims, no compatibility layers. bnox stands on its own.
+
+2. **Phase 2 — Initial deployment.** Deploy bnox fresh on a new host (VPS / VM / fresh hardware). Validate the base works as designed, including hosting at least one thing end-to-end (likely Hermes, per D-009). uqbn and snowi-node stay untouched during this phase.
+
+3. **Phase 3 — uqbn migration (per-thing).** Wipe the MacBook, install bnox, then evaluate each piece of uqbn content individually:
+   - **Keep + migrate:** selected things moved onto bnox via the standard `.bnox/` pattern (D-006).
+   - **Discard:** anything not worth migrating gets thrown in the bin. User has signalled most uqbn content is non-critical.
+   - Hermes (D-009) is the first thing to host on the post-wipe MacBook.
+
+4. **Phase 4 — snowi-node migration (long-term).** Deferred indefinitely. Each snowi-node service evaluated per-thing when the time comes. No urgency; not part of bnox's design.
+
+**Alternatives considered:**
+
+- **Wholesale migration of either source system as a unit:** rejected per user — wants per-thing review, not bulk lift-and-shift.
+- **snowi-node first:** rejected — production risk, two-major NixOS jump (D-010), no immediate motivation.
+- **Build migration tooling into bnox itself:** rejected — bnox is the base; migration is an operator activity, not base functionality.
+
+**Consequences:**
+
+- **All blocking questions are now resolved.** Phase 4 (Decisions) of the bnox process is complete. Ready to enter Phase 5 (Base design).
+- bnox design proceeds without further reference to uqbn/snowi-node specifics. The architecture (D-001 through D-011) is the spec.
+- Migration of either source system is documented as a future operator activity, governed per-thing by the `.bnox/` pattern + Q9.5 host config binding.
+- Q5 resolved. Q6 (macOS build capability) and Q8 (uqbn role trajectory) remain non-blocking and can be revisited when relevant.
+- **Milestone:** with all blocking questions closed, work can begin on `process/06-base-design.md` (target flake + module layout) — translating the 12 decisions into concrete Nix code structure.
