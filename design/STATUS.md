@@ -1,12 +1,12 @@
 # Status
 
-**Last updated:** 2026-07-28 (Repo reorganized: design material moved under `design/`; product will live at repo root. Both design docs in review; ready for implementation)
+**Last updated:** 2026-07-28 (Implementation started: Job 01 flake+base complete & verified. Design phases all done.)
 
 ## Current phase
 
-**Phase 6 of 6 — Diversions pattern** (draft in review)
+**Implementation** (sub-agent coordinated — see `design/jobs/`)
 
-`process/07-diversions.md` drafted — per-host extension pattern (3 orthogonal diversion axes: profile × hardware × things; auto-discovered host enumeration; ~30-line host config). Resolved Q-D1 (explicit profile import), Q-D2 (auto-discovery), Q-D3 (3-profile set: minimal/server/desktop). Both design docs (`06-base-design.md`, `07-diversions.md`) now complete and in review. Implementation can begin once user signs off.
+Design phases 1-6 complete. Implementation in progress via the coordinator model (worker `general` builds, independent `general` checks, loop until sign-off). Job 01 (flake skeleton + `modules/base/`) complete and verified PASS.
 
 ## What's done
 
