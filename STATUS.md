@@ -1,12 +1,12 @@
 # Status
 
-**Last updated:** 2026-07-27 (D-012 migration scope accepted; ALL blocking questions resolved; Phase 4 Decisions complete → ready for Phase 5 Base design)
+**Last updated:** 2026-07-28 (Phase 6 Diversions pattern drafted; both design docs in review; ready for implementation)
 
 ## Current phase
 
-**Phase 5 of 6 — Base design**
+**Phase 6 of 6 — Diversions pattern** (draft in review)
 
-All blocking open questions resolved (D-001 through D-012 accepted). The architecture is fully specified. Ready to draft `process/06-base-design.md` (target flake + module layout) — translating the 12 decisions into concrete Nix code structure.
+`process/07-diversions.md` drafted — per-host extension pattern (3 orthogonal diversion axes: profile × hardware × things; auto-discovered host enumeration; ~30-line host config). Resolved Q-D1 (explicit profile import), Q-D2 (auto-discovery), Q-D3 (3-profile set: minimal/server/desktop). Both design docs (`06-base-design.md`, `07-diversions.md`) now complete and in review. Implementation can begin once user signs off.
 
 ## What's done
 
@@ -19,16 +19,14 @@ All blocking open questions resolved (D-001 through D-012 accepted). The archite
 ## What's next
 
 1. ~~Resolve blocking open questions~~ — **DONE** (D-001 through D-012)
-2. Draft `process/06-base-design.md` (target flake + module layout) — translate the 12 decisions into concrete Nix structure
-3. Draft `process/07-diversions.md` (per-host extension pattern)
-4. Implementation begins (writing `flake.nix`, modules, etc.)
-3. Walk through `process/05-decisions.md` one decision at a time
-4. Draft `process/06-base-design.md` (target flake + module layout)
-5. Draft `process/07-diversions.md` (per-host extension pattern)
+2. ~~Draft `process/06-base-design.md` (target flake + module layout)~~ — **DONE**
+3. ~~Draft `process/07-diversions.md` (per-host extension pattern)~~ — **DONE**
+4. User reviews both design docs; revise if needed
+5. **Implementation begins** — writing `flake.nix`, `modules/`, first host config
 
 ## Blockers / waiting on
 
-None. All blocking questions resolved. Awaiting user authorisation to begin Phase 5 (base design).
+None. Awaiting user sign-off on `process/06-base-design.md` + `process/07-diversions.md` before implementation begins.
 
 ## Phase tracker
 
@@ -38,8 +36,8 @@ None. All blocking questions resolved. Awaiting user authorisation to begin Phas
 | 2 | Requirements | done |
 | 3 | Comparison | done |
 | 4 | Decisions | **done** (D-001 through D-012 accepted) |
-| 5 | Base design | next |
-| 6 | Diversions pattern | pending |
+| 5 | Base design | **done** (draft in review) |
+| 6 | Diversions pattern | **done** (draft in review) |
 
 ## Decision count
 
