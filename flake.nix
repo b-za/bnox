@@ -23,6 +23,7 @@
       self,
       nixpkgs,
       home-manager,
+      agenix,
       ...
     }:
     let
@@ -42,6 +43,7 @@
       nixosModules.bnox = {
         imports = [
           home-manager.nixosModules.home-manager
+          agenix.nixosModules.default
           ./modules/default.nix
         ];
       };
