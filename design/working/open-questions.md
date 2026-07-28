@@ -4,13 +4,13 @@ Things needing the user's input before we can finalize decisions. Ordered by blo
 
 ## Q1: Project name ✅ RESOLVED → D-001
 
-**Resolved 2026-07-27:** name is **`bnox`**. See `process/05-decisions.md` D-001 for rationale. Other candidates that were considered and rejected: `baseos` (placeholder), `noxos` (collision with active NoxOS-org), `snowi-os` (too host-specific), `bhos`, `keystone`, `rootstockos`, `nyxos`.
+**Resolved 2026-07-27:** name is **`bnox`**. See `design/process/05-decisions.md` D-001 for rationale. Other candidates that were considered and rejected: `baseos` (placeholder), `noxos` (collision with active NoxOS-org), `snowi-os` (too host-specific), `bhos`, `keystone`, `rootstockos`, `nyxos`.
 
 ---
 
 ## Q2: Container runtime ✅ RESOLVED → D-002
 
-**Resolved 2026-07-27:** Podman is the base default, declared via `virtualisation.oci-containers` (not raw quadlets). All images must be built by Nix (`dockerTools.*`) — **Dockerfiles / `docker build` are forbidden** as a hard determinism requirement. uqbn's `docker/` content is treated as inspiration only, not migration baggage (no barrier to starting fresh). See `process/05-decisions.md` D-002 for full rationale and consequences.
+**Resolved 2026-07-27:** Podman is the base default, declared via `virtualisation.oci-containers` (not raw quadlets). All images must be built by Nix (`dockerTools.*`) — **Dockerfiles / `docker build` are forbidden** as a hard determinism requirement. uqbn's `docker/` content is treated as inspiration only, not migration baggage (no barrier to starting fresh). See `design/process/05-decisions.md` D-002 for full rationale and consequences.
 
 ---
 
@@ -22,13 +22,13 @@ Things needing the user's input before we can finalize decisions. Ordered by blo
 
 ## Q4: NixOS version ✅ RESOLVED → D-010
 
-**Resolved 2026-07-27:** Pin to **`nixos-26.05`** (current stable). Full channel (no `-small`). Original recommendation of 24.11 was stale — both source systems run EOL NixOS as of today (24.11 EOL'd 2025-06-30; 25.05 EOL'd 2025-12-31). bnox is a fresh start; no legacy to preserve. Bump cadence: every 6 months when new stable ships. See `process/05-decisions.md` D-010.
+**Resolved 2026-07-27:** Pin to **`nixos-26.05`** (current stable). Full channel (no `-small`). Original recommendation of 24.11 was stale — both source systems run EOL NixOS as of today (24.11 EOL'd 2025-06-30; 25.05 EOL'd 2025-12-31). bnox is a fresh start; no legacy to preserve. Bump cadence: every 6 months when new stable ships. See `design/process/05-decisions.md` D-010.
 
 ---
 
 ## Q5: Migration scope ✅ RESOLVED → D-012
 
-**Resolved 2026-07-27:** Build bnox standalone first (Phase 1), deploy fresh somewhere to validate (Phase 2), then migrate uqbn per-thing (Phase 3 — MacBook wipe, selective keep/migrate/toss, Hermes first), snowi-node long-term/deferred (Phase 4). Migration is an operator activity, not bnox base functionality. See `process/05-decisions.md` D-012. **All blocking questions now resolved.**
+**Resolved 2026-07-27:** Build bnox standalone first (Phase 1), deploy fresh somewhere to validate (Phase 2), then migrate uqbn per-thing (Phase 3 — MacBook wipe, selective keep/migrate/toss, Hermes first), snowi-node long-term/deferred (Phase 4). Migration is an operator activity, not bnox base functionality. See `design/process/05-decisions.md` D-012. **All blocking questions now resolved.**
 
 ---
 
@@ -59,7 +59,7 @@ Not blocking, but worth noting: uqbn's role may evolve. If the user wants it hea
 
 ## Q9: Repo topology / OS-vs-app separation ✅ RESOLVED → D-006
 
-**Resolved 2026-07-27:** See `process/05-decisions.md` D-006 for full rationale. Thing taxonomy (provenance × shape × dependencies), per-thing bnox-side declaration (plumbing config + secrets slot), platform/thing boundary (Caddy, NATS, Podman, static-site server = platform), NATS subject layout (`things.<name>.>` for things, `host.>` reserved), one JetStream stream per thing, self-declared upstream ports with bnox collision-check, dep-graph validation at rebuild, L0 enforcement with L1-ready `deps` schema.
+**Resolved 2026-07-27:** See `design/process/05-decisions.md` D-006 for full rationale. Thing taxonomy (provenance × shape × dependencies), per-thing bnox-side declaration (plumbing config + secrets slot), platform/thing boundary (Caddy, NATS, Podman, static-site server = platform), NATS subject layout (`things.<name>.>` for things, `host.>` reserved), one JetStream stream per thing, self-declared upstream ports with bnox collision-check, dep-graph validation at rebuild, L0 enforcement with L1-ready `deps` schema.
 
 **One residual sub-question remains open as Q9.5 below.**
 
@@ -285,7 +285,7 @@ Q10 (shared infra classification) is fully absorbed here.
 
 ## Q11: Secrets architecture ✅ RESOLVED → D-007
 
-**Resolved 2026-07-27:** **Hybrid-1 with Hybrid-2-ready abstraction** (see `process/05-decisions.md` D-007).
+**Resolved 2026-07-27:** **Hybrid-1 with Hybrid-2-ready abstraction** (see `design/process/05-decisions.md` D-007).
 
 - Infra layer (host key, Caddy TLS, NATS auth): **agenix** (push-at-deploy, encrypted-in-git).
 - Things layer: **swappable backend, chosen at bnox config time per host.**
@@ -299,19 +299,19 @@ Q10 (shared infra classification) is fully absorbed here.
 
 ## Q12: Host encryption key home ✅ RESOLVED → D-008
 
-**Resolved 2026-07-27:** Host encryption key = **SSH host key** (`/etc/ssh/ssh_host_ed25519_key`). No separate bnox-managed key. agenix reads via `age.sshKeyPaths` (default pattern). Future `nats-kv` backend derives from same key via age. Provisioned via nixos-anywhere (matches snowi-node). **Recovery via second age recipient on every agenix secret** (held off-host, e.g. operator's workstation) — not via `/etc/ssh/` backup. TPM path documented as future hardware-host enhancement. See `process/05-decisions.md` D-008 for full rationale.
+**Resolved 2026-07-27:** Host encryption key = **SSH host key** (`/etc/ssh/ssh_host_ed25519_key`). No separate bnox-managed key. agenix reads via `age.sshKeyPaths` (default pattern). Future `nats-kv` backend derives from same key via age. Provisioned via nixos-anywhere (matches snowi-node). **Recovery via second age recipient on every agenix secret** (held off-host, e.g. operator's workstation) — not via `/etc/ssh/` backup. TPM path documented as future hardware-host enhancement. See `design/process/05-decisions.md` D-008 for full rationale.
 
 ---
 
 ## Q13: App-layer deployment mechanism ✅ RESOLVED → D-011
 
-**Resolved 2026-07-27:** Webhook + NATS event bus. Single bnox-owned `webhook-receiver.service` publishes to NATS subjects `host.deploy.<name>.{changed,synced,built,deployed,failed}`. Per-thing sync/build/container units subscribe and execute. JetStream stream `host-deploy-logs` for audit trail. Both build patterns supported day-1 (on-host default, off-host + registry optional, per-thing declaration in `.bnox/`). Build invocation is standard bnox-owned: thing's flake exposes `images.<system>.<component>`, bnox invokes uniformly. Rollback = last 3 tarballs at `/var/lib/<thing>/images/`, pruned daily. See `process/05-decisions.md` D-011 for full rationale.
+**Resolved 2026-07-27:** Webhook + NATS event bus. Single bnox-owned `webhook-receiver.service` publishes to NATS subjects `host.deploy.<name>.{changed,synced,built,deployed,failed}`. Per-thing sync/build/container units subscribe and execute. JetStream stream `host-deploy-logs` for audit trail. Both build patterns supported day-1 (on-host default, off-host + registry optional, per-thing declaration in `.bnox/`). Build invocation is standard bnox-owned: thing's flake exposes `images.<system>.<component>`, bnox invokes uniformly. Rollback = last 3 tarballs at `/var/lib/<thing>/images/`, pruned daily. See `design/process/05-decisions.md` D-011 for full rationale.
 
 ---
 
 ## Q14: Over-engineering guardrail ✅ RESOLVED → D-009
 
-**Resolved 2026-07-27:** Captured as NFR-6 in `process/03-requirements.md` (to be added):
+**Resolved 2026-07-27:** Captured as NFR-6 in `design/process/03-requirements.md` (to be added):
 
 > **NFR-6 — Deployment simplicity ceiling (default; deviations allowed with justification).** Default: application-layer deployment (per D-006) is implementable using only **Podman, systemd, git, and optionally Forgejo**. Per-thing overhead **≤ 3 systemd units** (container + git-sync + build-trigger). Rollback via `podman load` of prior image + `systemctl restart` — no separate rollback tooling. By default forbidden: Kubernetes, Nomad, Argo CD, Flux, Helm, any framework with its own control plane. **A specific thing may deviate** when it has a justified need; deviations are raised as an open question and logged as a decision (D-NNN) before adoption — not silent.
 

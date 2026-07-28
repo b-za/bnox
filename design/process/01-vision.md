@@ -40,5 +40,5 @@ Today the user maintains two NixOS boxes that:
 
 - A new NixOS box can be provisioned by: writing a ~30-line `hosts/<name>.nix`, running `nixos-anywhere`, done.
 - Improvements made for one system (e.g. a better deploy script) automatically apply to all.
-- A new agent reading `STATUS.md` + `memory/agent-handoff.md` can continue the work without context loss.
+- A new agent reading `design/STATUS.md` + `design/memory/agent-handoff.md` can continue the work without context loss.
 - Both existing systems (`uqbn`, `snowi-node`) **could** be expressed as the base + a small host-specific override file (whether they actually get migrated is a separate decision).

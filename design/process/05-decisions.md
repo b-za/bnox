@@ -16,7 +16,7 @@ Append-only log of decisions made during this design process. New decisions go a
 
 ## Pending decisions (awaiting user)
 
-These map to the blocking open questions in `working/open-questions.md`:
+These map to the blocking open questions in `design/working/open-questions.md`:
 
 (All blocking questions resolved as of D-012. Q6, Q8 remain non-blocking.)
 ---
@@ -56,7 +56,7 @@ These map to the blocking open questions in `working/open-questions.md`:
 - Base flake inputs do **not** need a Docker-specific flake (uqbn currently pulls `portainer-flake`; bnox will not).
 - The `lib/default.nix` inherited from snowi-node is slimmed: `mkQuadlet` dropped, `mkEnvFile` retained only if a secrets-manager decision (D-003) wants env files as the delivery format.
 - Any future host wanting Portainer or a Docker-only image must justify it per-host, not in the base.
-- Documentation (`process/06-base-design.md` and per-service docs) must state the "Nix-only images" rule explicitly so contributors don't reach for a Dockerfile.
+- Documentation (`design/process/06-base-design.md` and per-service docs) must state the "Nix-only images" rule explicitly so contributors don't reach for a Dockerfile.
 - Reversibility: if Podman turns out wrong for some host, switching that host to Docker is a local change because `oci-containers` is runtime-agnostic. The base itself does not need to change.
 
 ---
@@ -258,7 +258,7 @@ Locked alongside D-009. The thing-hosting abstraction (D-006) implied `oci-conta
 
 ### Q14 — Over-engineering guardrail (resolved)
 
-**Resolved 2026-07-27.** Captured as NFR-6 in `process/03-requirements.md` (to be added):
+**Resolved 2026-07-27.** Captured as NFR-6 in `design/process/03-requirements.md` (to be added):
 
 > **NFR-6 — Deployment simplicity ceiling (default; deviations allowed with justification).** Default: application-layer deployment (per D-006) is implementable using only **Podman, systemd, git, and optionally Forgejo**. Per-thing overhead **≤ 3 systemd units** (container + git-sync + build-trigger). Rollback via `podman load` of prior image + `systemctl restart` — no separate rollback tooling. By default forbidden: Kubernetes, Nomad, Argo CD, Flux, Helm, any framework with its own control plane. **A specific thing may deviate** when it has a justified need; deviations are raised as an open question and logged as a decision (D-NNN) before adoption — not silent.
 
@@ -382,4 +382,4 @@ D-009 (Hermes) is the first use of this deviation clause.
 - bnox design proceeds without further reference to uqbn/snowi-node specifics. The architecture (D-001 through D-011) is the spec.
 - Migration of either source system is documented as a future operator activity, governed per-thing by the `.bnox/` pattern + Q9.5 host config binding.
 - Q5 resolved. Q6 (macOS build capability) and Q8 (uqbn role trajectory) remain non-blocking and can be revisited when relevant.
-- **Milestone:** with all blocking questions closed, work can begin on `process/06-base-design.md` (target flake + module layout) — translating the 12 decisions into concrete Nix code structure.
+- **Milestone:** with all blocking questions closed, work can begin on `design/process/06-base-design.md` (target flake + module layout) — translating the 12 decisions into concrete Nix code structure.

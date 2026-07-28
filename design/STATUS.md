@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-07-28 (Phase 6 Diversions pattern drafted; both design docs in review; ready for implementation)
+**Last updated:** 2026-07-28 (Repo reorganized: design material moved under `design/`; product will live at repo root. Both design docs in review; ready for implementation)
 
 ## Current phase
 
