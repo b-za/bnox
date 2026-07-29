@@ -41,4 +41,4 @@ None. Phase 2 underway; Job 08 done, Jobs 09-11 (deployment) queued next.
 
 ## Decision count
 
-9 accepted (D-001 `bnox`, D-002 Podman + Nix-only images, D-006 thing hosting, D-007 secrets Hybrid-1 + Hybrid-2-ready, D-008 host key = SSH host key, D-009 Hermes deviation, D-010 NixOS 26.05, D-011 webhook + NATS deployment, D-012 migration scope). **All blocking questions resolved.** Q6, Q8 non-blocking.
+10 accepted (D-001 `bnox`, D-002 Podman + Nix-only images, D-006 thing hosting, D-007 secrets Hybrid-1 + Hybrid-2-ready, D-008 host key = SSH host key, D-009 Hermes deviation, D-010 NixOS 26.05, D-011 webhook + NATS deployment, D-012 migration scope, D-013 deployment dispatch = central dispatcher). **All blocking questions resolved.** Q6, Q8 non-blocking.

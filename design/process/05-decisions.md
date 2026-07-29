@@ -18,7 +18,7 @@ Append-only log of decisions made during this design process. New decisions go a
 
 These map to the blocking open questions in `design/working/open-questions.md`:
 
-(All blocking questions resolved as of D-012. Q6, Q8 remain non-blocking.)
+(All blocking questions resolved as of D-012. D-013 is a non-blocking refinement to D-011 §4's dispatch topology. Q6, Q8 remain non-blocking.)
 ---
 
 ## D-001 — Project name
@@ -383,3 +383,26 @@ D-009 (Hermes) is the first use of this deviation clause.
 - Migration of either source system is documented as a future operator activity, governed per-thing by the `.bnox/` pattern + Q9.5 host config binding.
 - Q5 resolved. Q6 (macOS build capability) and Q8 (uqbn role trajectory) remain non-blocking and can be revisited when relevant.
 - **Milestone:** with all blocking questions closed, work can begin on `design/process/06-base-design.md` (target flake + module layout) — translating the 12 decisions into concrete Nix code structure.
+
+---
+
+## D-013 — Deployment dispatch topology (central dispatcher)
+**Date:** 2026-07-29
+**Status:** accepted
+**Context:** D-011 §4 described the per-thing pipeline units as subscribing to NATS subjects directly ("`<name>-sync.service` — subscribes to `.changed`"; "`<name>-build.service` — subscribes to `.synced`"). A literal reading means **2 long-running subscriber daemons per thing** (sync + build), each idle-waiting for events. On a host with N things that is 2N+1 always-running processes (plus containers). User explicitly rejected this: "I don't want to end up with many running processes that are just waiting, rather have a central one that wakes the right one up when it needs to wake up."
+
+**Decision:**
+1. **One global `bnox-deploy-dispatcher.service`** is the sole subscriber to the `host.deploy.>` event namespace. It parses the thing name + event type from the subject and triggers the corresponding per-thing oneshot (`<name>-sync.service` on `.changed`; `<name>-build.service` on `.synced`).
+2. **Per-thing sync/build units become oneshots** (`Type=oneshot`), woken by the dispatcher — not long-running subscribers. They do their work (git sync; nix build + podman load + restart) and exit.
+3. **All events still flow through NATS** (`host.deploy.<name>.{changed,synced,built,deployed,failed}`) and the `host-deploy-logs` JetStream stream still captures the full audit trail (D-011 §2/§3 observability intent preserved). The dispatcher is a router, not a replacement for the bus.
+4. **Build invocation, rollback, subjects, and HMAC auth are unchanged from D-011** — only the dispatch topology changes.
+
+**Alternatives considered:**
+- **Per-thing subscriber daemons (D-011 §4 literal):** rejected by user — 2N+1 idle waiting processes; wasteful and noisy at rest.
+- **Sync directly triggers build via `systemctl start` (no NATS hop between sync and build):** rejected — drops the `.synced` event from the bus, losing D-011's step-by-step audit trail and the ability to observe/intervene between sync and build.
+
+**Consequences:**
+- Two global services instead of one: `bnox-webhook-receiver.service` (publishes `.changed`) + `bnox-deploy-dispatcher.service` (routes `.changed`/`.synced` to oneshots). Both are bnox-owned, not per-thing.
+- Per-thing unit count: sync(oneshot) + build(oneshot) + container(s). Single-component thing = 3 units (NFR-6 ceiling honored); multi-component adds container units only (as D-011 §5 already noted).
+- Long-running process count is constant (2 globals) regardless of how many things run — scales cleanly. Trade: one more global service vs D-011 §4's literal one; accepted as worth it.
+- `modules/deployment/` gains a dispatcher concern (lives in `pipeline.nix` or a sibling `dispatcher.nix` — implementation choice for the pipeline job). D-011 §4's unit descriptions are read as naming the *functional* units (sync, build, container), not mandating that each literally run a subscriber loop.
