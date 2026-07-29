@@ -38,7 +38,7 @@ The host file expresses *only* divergence. The bnox base module is injected by t
 
 ```nix
 # hosts/<name>/configuration.nix
-{ ... }:
+{ bnox, ... }:
 {
   imports = [
     bnox.profiles.desktop                  # exactly one: .minimal / .server / .desktop
@@ -101,7 +101,7 @@ External consumers (a separate repo using bnox as a flake input) follow the same
 
 ```nix
 # hosts/<vps-name>/configuration.nix
-{ ... }:
+{ bnox, ... }:
 {
   imports = [
     bnox.profiles.server
@@ -125,7 +125,7 @@ External consumers (a separate repo using bnox as a flake input) follow the same
 
 ```nix
 # hosts/<laptop-name>/configuration.nix
-{ ... }:
+{ bnox, ... }:
 {
   imports = [
     bnox.profiles.desktop
