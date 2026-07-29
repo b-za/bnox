@@ -121,7 +121,11 @@ let
   ) (builtins.attrNames subjectGroups);
 in
 {
-  imports = [ ./user.nix ];
+  imports = [
+    ./user.nix
+    ./shapes/default.nix
+    ./runtimes/default.nix
+  ];
 
   options.bnox.things = lib.mkOption {
     type = lib.types.attrsOf (
