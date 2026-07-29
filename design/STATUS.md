@@ -1,12 +1,10 @@
 # Status
 
-**Last updated:** 2026-07-29 (D-012 Phase 1 complete: bnox core built & validated end-to-end via `nixosConfigurations.bnox-dev`. Implementation jobs 01-07 done.)
+**Last updated:** 2026-07-29 (Phase 2 underway — Job 08 `.bnox/` loader DONE. D-012 Phase 1 complete: bnox core built & validated end-to-end via `nixosConfigurations.bnox-dev`. Implementation jobs 01-08 done.)
 
 ## Current phase
 
-**Implementation — D-012 Phase 1 COMPLETE.** bnox core (base + platform + things + secrets + profiles) is built and proven to compose end-to-end into a real NixOS system config (`nixosConfigurations.bnox-dev` evaluates to a real `toplevel` derivation). Coordinator model throughout: worker `general` builds, independent `general` checks, loop until sign-off (fix-loops on Jobs 05 & 07). Jobs 01-07 done & committed; see `design/jobs/`.
-
-**Phase 2 (real thing hosting) remaining:** `.bnox/` loader, deployment pipeline (webhook + NATS + rollback, D-011), host-install runtime + daemon shape (Hermes, D-009).
+**Implementation — D-012 Phase 2 IN PROGRESS.** Phase 1 (bnox core: base + platform + things + secrets + profiles) is complete. Phase 2 (real thing hosting) underway: **Job 08 (`.bnox/` loader) DONE** — thing-intrinsic fields now sourced from `${source}/.bnox/{thing.nix,<component>.nix}` via `mkDefault` merge; `bnox-dev` exercises it via a mock fixture. Jobs 09-11 (deployment, D-011) and 12 (host-install + daemon, D-009) queued next. Coordinator model throughout: worker `general` builds, independent `general` checks, loop until sign-off. Jobs 01-08 done & committed; see `design/jobs/`.
 
 ## What's done
 
@@ -21,14 +19,14 @@
 **D-012 Phase 1 (bnox standalone) — DONE.** Implementation jobs 01-07 complete & verified:
 - 01 flake + base · 02 platform · 03 secrets · 04 things core · 05 things shapes + container runtime · 06 profiles · 07 validation host (end-to-end eval)
 
-**Phase 2 (real thing hosting) — awaiting user go:**
-1. `.bnox/` loader (thing-intrinsic fields from thing repos)
-2. Deployment pipeline (webhook + NATS + rollback, D-011)
-3. host-install runtime + daemon shape (Hermes, D-009)
+**Phase 2 (real thing hosting) — IN PROGRESS:** Job 08 (`.bnox/` loader) done; next in order:
+1. `.bnox/` loader (thing-intrinsic fields from thing repos) — **Job 08, DONE**
+2. Deployment pipeline (webhook + NATS + rollback, D-011) — Jobs 09-11, next
+3. host-install runtime + daemon shape (Hermes, D-009) — Job 12
 
 ## Blockers / waiting on
 
-None. D-012 Phase 1 complete. Phase 2 awaits user authorisation.
+None. Phase 2 underway; Job 08 done, Jobs 09-11 (deployment) queued next.
 
 ## Phase tracker
 

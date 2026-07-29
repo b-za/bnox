@@ -1,6 +1,7 @@
 { lib, config, ... }:
 let
   hardening = import ./hardening.nix { inherit lib; };
+  loader = import ./loader.nix { inherit lib; };
 
   componentSubmodule =
     { name, ... }:
@@ -46,7 +47,7 @@ let
     };
 
   thingOptionsModule =
-    { name, ... }:
+    { name, config, ... }:
     {
       options = {
         enable = lib.mkOption {
@@ -65,7 +66,14 @@ let
           default = [ ];
         };
         components = lib.mkOption {
-          type = lib.types.attrsOf (lib.types.submodule componentSubmodule);
+          type = lib.types.attrsOf (lib.types.submoduleWith {
+            modules = [ componentSubmodule loader.componentSubmodule ];
+            specialArgs = {
+              thingSource = config.source;
+              thingName = name;
+              thingEnable = config.enable;
+            };
+          });
           default = { };
         };
       };
@@ -125,6 +133,7 @@ in
     ./user.nix
     ./shapes/default.nix
     ./runtimes/default.nix
+    loader.topLevel
   ];
 
   options.bnox.things = lib.mkOption {
@@ -132,6 +141,7 @@ in
       lib.types.submodule [
         thingOptionsModule
         hardening.overrideModule
+        loader.thingSubmodule
       ]
     );
     default = { };

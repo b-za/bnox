@@ -15,13 +15,7 @@
 
   bnox.things.demo = {
     enable = true;
-    source = "/srv/demo";
-    components.web = {
-      shape = "webapp";
-      runtime = "container";
-      domain = "demo.local";
-      ingressPort = 8080;
-      secrets = [ "api_key" ];
-    };
+    source = toString ./demo-thing;
+    components.web.domain = "demo.local";
   };
 }
