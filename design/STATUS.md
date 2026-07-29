@@ -1,12 +1,12 @@
 # Status
 
-**Last updated:** 2026-07-28 (Implementation started: Job 01 flake+base complete & verified. Design phases all done.)
+**Last updated:** 2026-07-29 (D-012 Phase 1 complete: bnox core built & validated end-to-end via `nixosConfigurations.bnox-dev`. Implementation jobs 01-07 done.)
 
 ## Current phase
 
-**Implementation** (sub-agent coordinated — see `design/jobs/`)
+**Implementation — D-012 Phase 1 COMPLETE.** bnox core (base + platform + things + secrets + profiles) is built and proven to compose end-to-end into a real NixOS system config (`nixosConfigurations.bnox-dev` evaluates to a real `toplevel` derivation). Coordinator model throughout: worker `general` builds, independent `general` checks, loop until sign-off (fix-loops on Jobs 05 & 07). Jobs 01-07 done & committed; see `design/jobs/`.
 
-Design phases 1-6 complete. Implementation in progress via the coordinator model (worker `general` builds, independent `general` checks, loop until sign-off). Job 01 (flake skeleton + `modules/base/`) complete and verified PASS.
+**Phase 2 (real thing hosting) remaining:** `.bnox/` loader, deployment pipeline (webhook + NATS + rollback, D-011), host-install runtime + daemon shape (Hermes, D-009).
 
 ## What's done
 
@@ -18,15 +18,17 @@ Design phases 1-6 complete. Implementation in progress via the coordinator model
 
 ## What's next
 
-1. ~~Resolve blocking open questions~~ — **DONE** (D-001 through D-012)
-2. ~~Draft `process/06-base-design.md` (target flake + module layout)~~ — **DONE**
-3. ~~Draft `process/07-diversions.md` (per-host extension pattern)~~ — **DONE**
-4. User reviews both design docs; revise if needed
-5. **Implementation begins** — writing `flake.nix`, `modules/`, first host config
+**D-012 Phase 1 (bnox standalone) — DONE.** Implementation jobs 01-07 complete & verified:
+- 01 flake + base · 02 platform · 03 secrets · 04 things core · 05 things shapes + container runtime · 06 profiles · 07 validation host (end-to-end eval)
+
+**Phase 2 (real thing hosting) — awaiting user go:**
+1. `.bnox/` loader (thing-intrinsic fields from thing repos)
+2. Deployment pipeline (webhook + NATS + rollback, D-011)
+3. host-install runtime + daemon shape (Hermes, D-009)
 
 ## Blockers / waiting on
 
-None. Awaiting user sign-off on `process/06-base-design.md` + `process/07-diversions.md` before implementation begins.
+None. D-012 Phase 1 complete. Phase 2 awaits user authorisation.
 
 ## Phase tracker
 

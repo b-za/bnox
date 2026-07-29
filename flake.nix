@@ -65,7 +65,7 @@
             };
             modules = [
               self.nixosModules.bnox
-              hostsDir/${name}/configuration.nix
+              ./hosts/${name}/configuration.nix
             ];
           };
         }) hostNames
