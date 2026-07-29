@@ -71,6 +71,14 @@
         }) hostNames
       );
 
+      profiles = {
+        minimal = ./modules/profiles/minimal.nix;
+        server = ./modules/profiles/server.nix;
+        desktop = ./modules/profiles/desktop.nix;
+      };
+
+      hardware = { };
+
       lib = import ./lib/default.nix { lib = nixpkgs.lib; };
 
       packages.${system} = { };
