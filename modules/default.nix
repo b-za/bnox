@@ -4,5 +4,6 @@
     ./platform/default.nix
     ./secrets/default.nix
     ./things/default.nix
+    ./deployment/default.nix
   ];
 }

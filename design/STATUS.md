@@ -21,7 +21,7 @@
 
 **Phase 2 (real thing hosting) — IN PROGRESS:** Job 08 (`.bnox/` loader) done; next in order:
 1. `.bnox/` loader (thing-intrinsic fields from thing repos) — **Job 08, DONE**
-2. Deployment pipeline (webhook + NATS + rollback, D-011) — Jobs 09-11, next
+2. Deployment pipeline (webhook + NATS + rollback, D-011) — **Job 09 (webhook-receiver) DONE**; Jobs 10-11 queued (D-013 dispatcher lands in Job 10)
 3. host-install runtime + daemon shape (Hermes, D-009) — Job 12
 
 ## Blockers / waiting on
