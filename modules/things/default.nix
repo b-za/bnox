@@ -43,6 +43,10 @@ let
           type = lib.types.listOf lib.types.str;
           default = [ ];
         };
+        execStart = lib.mkOption {
+          type = lib.types.nullOr lib.types.str;
+          default = null;
+        };
       };
     };
 

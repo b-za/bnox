@@ -18,4 +18,10 @@
     source = toString ./demo-thing;
     components.web.domain = "demo.local";
   };
+
+  bnox.things.mock-daemon = {
+    enable = true;
+    source = toString ./mock-daemon;
+    components.main = { };
+  };
 }

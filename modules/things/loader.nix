@@ -35,6 +35,7 @@ let
         ingressPort = lib.mkDefault (comp.ingressPort or null);
         natsSubject = lib.mkDefault (comp.natsSubject or null);
         secrets = lib.mkDefault (comp.secrets or [ ]);
+        execStart = lib.mkDefault (comp.execStart or null);
       };
     };
 
