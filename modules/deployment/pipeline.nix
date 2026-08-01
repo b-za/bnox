@@ -21,8 +21,6 @@ let
     lib.optional (compNames != [ ]) (thing // { inherit compNames; })
   ) enabledThingsList;
 
-  hashSep = "#";
-
   dispatcherSource = ''
     import asyncio
     import os
@@ -136,7 +134,7 @@ let
         buildLoop = lib.concatMapStringsSep "\n" (
           comp:
           ''
-            imgpath=$(${pkgs.nix}/bin/nix build --no-link --print-out-paths "/srv/${name}${hashSep}images.x86_64-linux.${comp}") || fail "nix build ${comp} failed"
+            imgpath=$(${pkgs.nix}/bin/nix build --no-link --print-out-paths "/srv/${name}#images.x86_64-linux.${comp}") || fail "nix build ${comp} failed"
             if [ -x "$imgpath" ]; then
               loaded=$("$imgpath" | ${pkgs.podman}/bin/podman load 2>/dev/null | awk '/Loaded image/ {print $3}') || fail "podman load ${comp} failed"
             else
