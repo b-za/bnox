@@ -1,0 +1,80 @@
+{ lib, config, ... }:
+let
+  hardening = import ../hardening.nix { inherit lib; };
+
+  enabledThingsList = lib.mapAttrsToList (
+    thingName: thing: thing // { name = thingName; }
+  ) (lib.filterAttrs (_: thing: thing.enable) config.bnox.things);
+
+  containerBackend = config.virtualisation.oci-containers.backend;
+
+  containerComponents = lib.concatMap (
+    thing:
+    lib.mapAttrsToList (
+      compName: comp: {
+        thing = thing.name;
+        component = compName;
+        containerName = "${thing.name}-${compName}";
+        serviceName = "${containerBackend}-${thing.name}-${compName}";
+        user = thing.name;
+        inherit (comp) ingressPort;
+        allSlots = thing.secrets ++ comp.secrets;
+        outboundHTTPS = thing.hardening.network.outboundHTTPS;
+      }
+    ) (lib.filterAttrs (_: comp: comp.enable && comp.runtime == "container" && comp.shape != "static-site") thing.components)
+  ) enabledThingsList;
+
+  containers = builtins.listToAttrs (
+    map (
+      comp:
+      lib.nameValuePair comp.containerName {
+        image = "${comp.containerName}:current";
+        user = comp.user;
+        environmentFiles = map (slot: "/var/lib/bnox/secrets/${comp.thing}/${slot}") comp.allSlots;
+        ports = lib.optional (comp.ingressPort != null) "127.0.0.1:${toString comp.ingressPort}:${toString comp.ingressPort}";
+      }
+    ) containerComponents
+  );
+
+  serviceHardening = builtins.listToAttrs (
+    map (
+      comp:
+      lib.nameValuePair comp.serviceName {
+        serviceConfig = hardening.bundle {
+          writablePaths = [
+            "/var/lib/${comp.thing}"
+            "/var/lib/bnox/secrets/${comp.thing}"
+          ];
+          ipAddressAllow = lib.optional comp.outboundHTTPS ":443";
+        };
+      }
+    ) containerComponents
+  );
+
+  slotServicePairs = lib.concatMap (
+    comp:
+    map (
+      slot: {
+        slot = "${comp.thing}/${slot}";
+        inherit (comp) thing serviceName;
+      }
+    ) comp.allSlots
+  ) containerComponents;
+
+  slotGroups = lib.groupBy (p: p.slot) slotServicePairs;
+
+  fileSlots = lib.mapAttrs (
+    _key: pairs: {
+      owner = (builtins.head pairs).thing;
+      group = (builtins.head pairs).thing;
+      restartUnits = lib.unique (map (p: p.serviceName) pairs);
+    }
+  ) slotGroups;
+in
+{
+  config.virtualisation.oci-containers.containers = containers;
+
+  config.systemd.services = serviceHardening;
+
+  config.bnox.secrets.fileSlots = fileSlots;
+}

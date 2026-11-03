@@ -65,7 +65,13 @@ Copy an example from [examples/](./examples/) as a starting point. See [host-con
 
 ## 3. Install with nixos-anywhere
 
-From any machine with nix (flakes enabled), with the host repo committed:
+If the provider only gives you root **password** auth (most VPSs), pre-seed your key first — nixos-anywhere makes several SSH round-trips and password-prompting mid-run fails:
+
+```bash
+ssh-copy-id root@<ip>
+```
+
+Then, from any machine with nix (flakes enabled), with the host repo committed:
 
 ```bash
 nix run github:numtide/nixos-anywhere -- root@<ip> --flake .#myserver
@@ -75,7 +81,7 @@ This kexecs the target into a NixOS installer, wipes and repartitions the disks 
 
 After first boot:
 
-- SSH in as your user. Version 0.1 ships **no user by default** — declare one in your host config via `bnox.users` (see [host-config.md](./host-config.md)) or you'll have no SSH access at all (root login and password auth are disabled).
+- SSH in as your user — key-only, enforced on every axis: `PasswordAuthentication = false`, `KbdInteractiveAuthentication = false`, `PermitRootLogin = "no"` in the bnox base.
 - `sudo tailscale up` to join the tailnet (Tailscale ships enabled but unauthenticated).
 
 ## 4. Day-to-day changes

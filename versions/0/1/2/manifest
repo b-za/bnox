@@ -1,0 +1,4 @@
+status: done
+date: 2026-11-03
+nixpkgs: nixos-26.05 (see flake.lock)
+changes: Patch (fixes only). SSH hardening: explicit KbdInteractiveAuthentication = false in the base — closes the PAM keyboard-interactive authentication path that NixOS leaves enabled by default (PasswordAuthentication was already false, PermitRootLogin already no). Key-only login is now enforced on every axis.
