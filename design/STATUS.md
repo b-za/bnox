@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-11-03 (D-014 ACCEPTED — host-repo split + versioned bnox product. `agent` host committed in-repo as bootstrap (8217437), to be relocated as `agenthub` → bnox-bg. Next: D-014 implementation — bnox restructure to `versions/0/0/1/`, series docs/examples, three host repos.)
+**Last updated:** 2026-11-03 (D-014 implementation COMPLETE — steps 1-4 done: bnox restructured to `versions/0/0/1` + series docs/examples, three host repos created & pushed (b-za/bnox-bg `agenthub`, b-za/bnox-test `bnox-test`, b-za/bnox-sn `macbook-pro-2014-15`), all hosts eval against the GitHub pin. bnox made PUBLIC (user's "public shared bnox" intent; history scanned clean first). Remaining: step 5 — operator installs agenthub via nixos-anywhere.)
 
 ## Current phase
 
@@ -18,10 +18,10 @@
 
 **D-014 implementation steps:**
 1. Record D-014 — **DONE 2026-11-03** (decisions + STATUS + changelog + handoff)
-2. bnox restructure: `versions/0/0/1/` (tree minus hosts + fixtures + manifest), `versions/0/0/docs/` + `docs/examples/`, delete root `flake.nix` + `hosts/`, adapt version flake (drop auto-discovery, add `fixtures` output)
-3. Create host repos: bnox-bg (`agenthub`), bnox-test (`bnox-test` + fixtures consumed from pinned input), bnox-sn (`macbook-pro-2014-15`, fix/flag its pre-existing eval breakage); git init + remotes
-4. Validate: every host repo evals against pinned `0/0/1`; version copy eval-clean via throwaway eval
-5. agenthub install via nixos-anywhere from bnox-bg (operator)
+2. bnox restructure — **DONE** (`6abd885`): `versions/0/0/1/` (product copy, fixtures in, manifest `done`, throwaway eval clean), `versions/0/0/docs/` + `docs/examples/` (8 pages + 3 example hosts), root flake + hosts/ deleted, README rewritten
+3. Host repos — **DONE**: bnox-bg (`agenthub`), bnox-test (`bnox-test`, things sourced from `bnox.fixtures.*`), bnox-sn (`macbook-pro-2014-15`, trimmed to fix pre-existing eval breakage: dropped `hardware.camera`/pulseaudio/sddm+plasma5/cpuFreqGovernor/trackpoint — desktop profile's ly+qtile+pipewire stand). All git-init'd, pushed (private)
+4. Validate — **DONE**: all three hosts eval to real toplevels against the `github:b-za/bnox?dir=versions/0/0/1` pin; bnox-test exercises both runtimes (`podman-demo-web` + `mock-daemon-main` services resolve). bnox repo made **public** (`gh repo edit --visibility public`; pre-scan of all history for IPs/credentials clean — only slot-name "token" + prose hits). Host-repo remotes stored as `https://github.com/...` because the user's global gitconfig has two circular insteadOf rewrites (https→ssh wins for stored-https, ssh→https breaks stored-ssh) — left global config untouched
+5. agenthub install via nixos-anywhere from bnox-bg (operator): `nix run github:numtide/nixos-anywhere -- root@129.121.109.45 --flake .#agenthub`
 
 **Remaining Phase 2 = operator activity on a linux host** (`agenthub` via bnox-bg): deploy fresh, runtime-validate the deployment roundtrip (webhook→NATS→sync/build→restart) + a real Hermes host-install. Then **Phase 3 (D-012): uqbn migration** (MacBook wipe, install bnox, Hermes first thing) → bnox-sn.
 
