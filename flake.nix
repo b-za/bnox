@@ -24,6 +24,7 @@
       nixpkgs,
       home-manager,
       agenix,
+      disko,
       ...
     }:
     let
@@ -44,6 +45,7 @@
         imports = [
           home-manager.nixosModules.home-manager
           agenix.nixosModules.default
+          disko.nixosModules.disko
           ./modules/default.nix
         ];
       };
