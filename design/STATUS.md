@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-11-03 (D-014 implementation COMPLETE — steps 1-4 done: bnox restructured to `versions/0/0/1` + series docs/examples, three host repos created & pushed (b-za/bnox-bg `agenthub`, b-za/bnox-test `bnox-test`, b-za/bnox-sn `macbook-pro-2014-15`), all hosts eval against the GitHub pin. bnox made PUBLIC (user's "public shared bnox" intent; history scanned clean first). Remaining: step 5 — operator installs agenthub via nixos-anywhere.)
+**Last updated:** 2026-11-03 (Series 0.1 cut: `versions/0/1/1` DONE — generic `bnox.users` base, arch-aware pipeline, configurable webhook address, per-thing branch, mkEnvFile dropped, minimal xserver guard. One-time bootstrap exception applied to `0/0/1` (de-personalized; manifest documents it). All three host repos bumped to `0/1/1` with `bnox.users.bh` declared, eval-validated, pushed. Remaining: operator installs agenthub via nixos-anywhere.)
 
 ## Current phase
 
