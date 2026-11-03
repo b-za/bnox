@@ -406,3 +406,58 @@ D-009 (Hermes) is the first use of this deviation clause.
 - Per-thing unit count: sync(oneshot) + build(oneshot) + container(s). Single-component thing = 3 units (NFR-6 ceiling honored); multi-component adds container units only (as D-011 §5 already noted).
 - Long-running process count is constant (2 globals) regardless of how many things run — scales cleanly. Trade: one more global service vs D-011 §4's literal one; accepted as worth it.
 - `modules/deployment/` gains a dispatcher concern (lives in `pipeline.nix` or a sibling `dispatcher.nix` — implementation choice for the pipeline job). D-011 §4's unit descriptions are read as naming the *functional* units (sync, build, container), not mandating that each literally run a subscriber loop.
+
+---
+
+## D-014 — Host-repo split + versioned bnox product
+**Date:** 2026-11-03
+**Status:** accepted
+**Context:** After Phase 2 implementation, operator deployment on a real host (the `agent` KVM VPS, committed as `hosts/agent` during this discussion) surfaced the coupling problem in Q-D2's in-bnox `hosts/` model: every host change is a bnox repo change, and hosts cannot sit on different bnox versions cleanly. User requirements: (1) per-host config lives in separate git repos importing public bnox at a specific pinned version; (2) bnox defaults with host overrides; (3) minimal host configs, bnox never special-cased per host; (4) a promotion path for host-specific elements that become generally useful (opt-in, or new default); (5) explicit versioning because multiple hosts may run different bnox versions.
+
+**Decision:**
+
+1. **bnox product repo contains no hosts.** `hosts/` auto-discovery (Q-D2) is removed from the bnox flake; host configs live in separate host repos. Supersedes Q-D2 (07-diversions) and D-012's implicit "hosts ship in bnox" stance. Product validation = throwaway evals; integration validation = host repos evaluating real hosts against pinned versions.
+
+2. **Versioned copies at `versions/<major>/<minor>/<patch>/`** — each version dir is a complete product copy: `flake.nix` + `flake.lock` + `modules/` + `home/` + `lib/` + `secrets/` + `fixtures/` + `manifest`. Host repos pin via `github:b-za/bnox?dir=versions/<maj>/<min>/<patch>` (each dir has its own independent lock, so a version = frozen bnox + frozen nixpkgs). **Numbers are unpadded** (`0/0/1`, not `0/000/001`) — padding's only benefit is lexical sort order, cosmetic since paths are exact-pinned and copied, never globbed.
+
+3. **Version workflow:** new version = copy the previous version dir, commit, then develop inside it. Manifest `status: done` = frozen forever; **no fixes are ever copied back** — wanting a fix means taking the new version. First version `0/0/1` = current tree minus `hosts/`.
+
+4. **Series-level docs + examples:** each `versions/<major>/<minor>/` carries `docs/` (consumer-facing; `docs/examples/` = example host config skeletons). Docs are **amendable by patches within the series** (docs-only or alongside fixes); frozen when the next series starts. Docs live at series level, not per patch, so doc fixes never force a new patch version. `design/` remains the developer/AI-agent workspace at repo root; consumer docs never live there.
+
+5. **Fixtures live inside each version copy** (`fixtures/`: `demo-thing`, `mock-daemon`), exposed as flake output. Reason: `?dir=` restricts a flake's source to the subtree, so anything consumable by host repos must be inside the version dir. `bnox-test` sources its demo things from the pinned bnox input; series docs reference them as the thing-author examples.
+
+6. **Repo root = README + `design/` + `versions/` only.** No root `flake.nix`. Development happens inside the newest version dir.
+
+7. **Manifest per version** (`versions/<p>/<m>/<patch>/manifest`): `status` (wip|done), date, nixpkgs rev, changes vs previous version. `done` is the freeze marker; consumers may only pin done versions.
+
+8. **Host repos own host auto-discovery.** The hosts loop moves verbatim from bnox's flake into each host repo's root flake (`hosts/*/configuration.nix`, one `nixosSystem` per subdir, `specialArgs.bnox` = the pinned bnox input). One host repo may hold multiple hosts. Repos:
+
+   | Repo | Path | Remote | Hosts |
+   |---|---|---|---|
+   | bnox-test | `/Users/bh/code/systems/bnox-test` | `git@github.com:b-za/bnox-test.git` | `bnox-test` (dev/test host; renamed `bnox-dev`; sources fixtures from pinned bnox) |
+   | bnox-sn | `/Users/bh/code/systems/bnox-sn` | `git@github.com:b-za/bnox-sn.git` | `macbook-pro-2014-15`, future uqbn-migration MacBook (D-012 Phase 3) |
+   | bnox-bg | `/Users/bh/code/systems/bnox-bg` | `git@github.com:b-za/bnox-bg.git` | `agenthub` (renamed `agent`; KVM VPS, BIOS-legacy, disko+GRUB) |
+
+9. **Override semantics unchanged:** bnox sets `mkDefault`, hosts set plain values (profiles use `mkForce`); NixOS module merge does the rest. bnox modules never reference host names or host-specific conditions.
+
+10. **Promotion process (formalized):** a host-specific element deemed generally useful is promoted into bnox in a new version, either **opt-in** (new `mkDefault`-gated option) or **new default** (norm from that version on; hosts pinned to older versions are unaffected until they bump — this is what versions buy).
+
+11. **Numbering semantics:** major/minor/patch with semver meaning (major = breaking/philosophy, minor = feature batch/series, patch = fixes). No dots, no padding.
+
+**Alternatives considered:**
+
+- **Git tags instead of version dirs:** leaner (zero duplication, natural diffs) but rejected by user — in-tree copies are self-documenting, work naturally with `?dir=`, and give literal in-tree version identity.
+- **Keep in-bnox `hosts/` (status quo):** rejected — couples host churn to the product repo; no version skew across hosts.
+- **Zero-padded numbers (`0/000/001`):** rejected — no real problem with unpadded; padding's lexical-sort benefit is cosmetic for exact-pinned paths.
+- **Docs at repo root tracking latest:** rejected — docs must match the pinned series; series-level docs solve doc-fix churn without per-patch duplication.
+- **Docs/examples inside every patch version:** rejected — doc fixes would require new patch versions; series-level amendable docs chosen instead.
+- **Per-host gitignored secrets example files:** rejected after agenix refresher — D-007 encrypted-in-git stands unchanged (option A); nothing in host repos is gitignored for secrets.
+
+**Consequences:**
+
+- bnox repo restructure: create `versions/0/0/1/` (current tree minus `hosts/`, plus fixtures moved in, plus manifest), create `versions/0/0/docs/` + `docs/examples/`, delete root `flake.nix` + `hosts/`. Version flake drops `nixosConfigurations` auto-discovery, keeps `nixosModules.*`, `profiles.*`, `hardware.*`, `lib`, adds a `fixtures` output.
+- Three new host repos created with the pinned-input flake pattern; `bnox-dev` renamed `bnox-test` → bnox-test repo; `agent` renamed `agenthub` → bnox-bg; `macbook-pro-2014-15` → bnox-sn (its pre-existing eval breakage — `hardware.camera` etc. — is fixed or flagged during the move).
+- Phase 2 remaining operator activity (runtime validation of the deployment roundtrip) now runs on `agenthub` via the bnox-bg repo.
+- D-012 Phase 3 (uqbn migration) host lands in bnox-sn.
+- README story changes: consumers create a host repo pinning a version dir; the "add a host dir to bnox" story is dead.
+- 07-diversions Q-D2 superseded (discovery moves to host repos); Q-D1/Q-D3 unchanged; 06-base-design's `hosts/` layout superseded.
