@@ -1,0 +1,50 @@
+# Deployment (thing updates)
+
+OS changes go through `nixos-rebuild` in the host repo. **Thing changes never do.** A thing update flows through an event pipeline:
+
+```
+git push (thing repo)
+   → webhook (GitHub/Forgejo → Caddy vhost → bnox-webhook-receiver, HMAC-verified per thing)
+   → NATS  host.deploy.<thing>.changed
+   → bnox-deploy-dispatcher  (the ONLY subscriber; a global router)
+   → <thing>-sync.service    (oneshot, runs as the thing's user: git fetch + reset, publishes .synced)
+   → <thing>-build.service   (oneshot, root: nix build → podman load → retag :current, publishes .built)
+   → systemctl restart podman-<thing>-<component>
+   → host.deploy.<thing>.deployed
+```
+
+Everything is on the `host.deploy.<name>.{changed,synced,built,deployed,failed}` subjects, persisted in the `host-deploy-logs` JetStream stream — a full audit trail of every deployment of every thing. Watch it live:
+
+```bash
+nats sub 'host.deploy.>'
+```
+
+## Constant footprint
+
+Two global services (webhook receiver + dispatcher), regardless of how many things run. Per thing: 2 oneshots (sync, build) + its container(s). Nothing idles waiting per-thing.
+
+## What a thing repo must provide
+
+- `.bnox/` metadata ([things.md](./things.md)).
+- For container runtime: a flake exposing `images.<system>.<component>` (built with `dockerTools.*`).
+- Build pattern: on-host by default (`build = "on-host"` in `.bnox/`); off-host + registry supported.
+
+## Webhook setup
+
+- Register the webhook in GitHub/Forgejo pointing at the host's webhook vhost, content-type JSON, push events.
+- The per-thing HMAC secret lives at `/var/lib/bnox/deploy/<thing>/webhook_secret` (write it, done — no rebuild).
+
+## Rollback
+
+The build unit keeps the last 3 image tarballs per thing at `/var/lib/<thing>/images/<sha>.tar` (a daily timer prunes). Rollback is manual and boring by design:
+
+```bash
+podman load -i /var/lib/<thing>/images/<sha>.tar
+systemctl restart podman-<thing>-<component>
+```
+
+OS-level rollback is NixOS generations (boot menu entry per rebuild).
+
+## Exceptions
+
+Hermes-style `host-install` things self-update (`hermes update`); the pipeline ignores them.
