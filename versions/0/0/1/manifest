@@ -1,0 +1,4 @@
+status: done
+date: 2026-11-03
+nixpkgs: nixos-26.05 (see flake.lock)
+changes: First version. bnox core (base, platform, secrets, things, profiles) + real thing hosting (.bnox/ loader, container + host-install runtimes) + deployment pipeline (webhook receiver, NATS dispatcher, per-thing sync/build, rollback retention). Implements decisions D-001 through D-013. No hosts ship in bnox from this version on (D-014); host repos pin this directory.

@@ -6,7 +6,7 @@
     ./hardware-configuration.nix
   ];
 
-  networking.hostName = "agent";
+  networking.hostName = "vps";
   networking.useDHCP = true;
 
   boot.loader.grub.enable = true;

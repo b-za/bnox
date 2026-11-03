@@ -29,16 +29,6 @@
     }:
     let
       system = "x86_64-linux";
-
-      hostsDir = ./hosts;
-      hostEntries =
-        if builtins.pathExists hostsDir then
-          builtins.readDir hostsDir
-        else
-          { };
-      hostNames = builtins.attrNames (
-        nixpkgs.lib.filterAttrs (_: type: type == "directory") hostEntries
-      );
     in
     {
       nixosModules.bnox = {
@@ -57,22 +47,6 @@
         ];
       };
 
-      nixosConfigurations = builtins.listToAttrs (
-        map (name: {
-          inherit name;
-          value = nixpkgs.lib.nixosSystem {
-            inherit system;
-            specialArgs = {
-              bnox = self;
-            };
-            modules = [
-              self.nixosModules.bnox
-              ./hosts/${name}/configuration.nix
-            ];
-          };
-        }) hostNames
-      );
-
       profiles = {
         minimal = ./modules/profiles/minimal.nix;
         server = ./modules/profiles/server.nix;
@@ -80,6 +54,11 @@
       };
 
       hardware = { };
+
+      fixtures = {
+        demo-thing = ./fixtures/demo-thing;
+        mock-daemon = ./fixtures/mock-daemon;
+      };
 
       lib = import ./lib/default.nix { lib = nixpkgs.lib; };
 
