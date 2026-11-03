@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-11-03 (Series 0.1 cut: `versions/0/1/1` DONE — generic `bnox.users` base, arch-aware pipeline, configurable webhook address, per-thing branch, mkEnvFile dropped, minimal xserver guard. One-time bootstrap exception applied to `0/0/1` (de-personalized; manifest documents it). All three host repos bumped to `0/1/1` with `bnox.users.bh` declared, eval-validated, pushed. Remaining: operator installs agenthub via nixos-anywhere.)
+**Last updated:** 2026-11-03 (Series 0.1 at patch 2: `0/1/2` DONE — key-only SSH fully enforced (`KbdInteractiveAuthentication=false` closes the NixOS-default PAM kbd-interactive gap); docs gained the ssh-copy-id pre-step. All host repos on `0/1/2`. Remaining: operator installs agenthub via nixos-anywhere (key pre-seeded on the VPS).)
 
 ## Current phase
 
