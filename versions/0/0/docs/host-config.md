@@ -35,7 +35,7 @@ Note the `{ bnox, ... }:` head — `bnox` is passed as a specialArg by your host
 | **Hardware** | zero or more `bnox.hardware.*` | kernel modules, firmware (e.g. broadcom wifi) — cloud hosts usually need none; the generated `hardware-configuration.nix` covers it |
 | **Things** | zero or more `bnox.things.<name>` | which applications run here and their bindings ([things.md](./things.md)) |
 
-`modules/base/` is the implicit floor every host inherits (SSH hardening, user `bh`, Tailscale, firewall on, base packages, home-manager). Profiles diverge from that floor; they don't replace it.
+`modules/base/` is the implicit floor every host inherits (SSH hardening, Tailscale, firewall on, base packages, home-manager; declare your own users — this version ships none). Profiles diverge from that floor; they don't replace it.
 
 ## Overriding bnox defaults
 

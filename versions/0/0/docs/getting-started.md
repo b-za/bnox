@@ -75,7 +75,7 @@ This kexecs the target into a NixOS installer, wipes and repartitions the disks 
 
 After first boot:
 
-- SSH in as your user (the bnox base ships the `bh` user with an authorized key, root login and password auth disabled).
+- SSH in as your user. The base ships no user on this version — declare one in your host config via plain `users.users.<name>` (with `isNormalUser`, `wheel`, and your `openssh.authorizedKeys.keys`), or you'll have no SSH access at all (root login and password auth are disabled). Version 0.1 adds a `bnox.users` option for this.
 - `sudo tailscale up` to join the tailnet (Tailscale ships enabled but unauthenticated).
 
 ## 4. Day-to-day changes

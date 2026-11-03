@@ -1,9 +1,9 @@
-{ pkgs, ... }:
+{ lib, pkgs, ... }:
 
 {
-  i18n.defaultLocale = "en_US.UTF-8";
+  i18n.defaultLocale = lib.mkDefault "en_US.UTF-8";
 
-  time.timeZone = "Africa/Johannesburg";
+  time.timeZone = lib.mkDefault "UTC";
 
   environment.systemPackages = with pkgs; [
     vim
