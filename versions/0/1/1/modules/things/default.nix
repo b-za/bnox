@@ -61,6 +61,10 @@ let
         source = lib.mkOption {
           type = lib.types.str;
         };
+        branch = lib.mkOption {
+          type = lib.types.str;
+          default = "main";
+        };
         deps = lib.mkOption {
           type = lib.types.listOf lib.types.str;
           default = [ ];

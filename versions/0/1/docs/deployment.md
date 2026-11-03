@@ -31,7 +31,8 @@ Two global services (webhook receiver + dispatcher), regardless of how many thin
 
 ## Webhook setup
 
-- Register the webhook in GitHub/Forgejo pointing at the host's webhook vhost, content-type JSON, push events.
+- Set the host's webhook address if it differs from the default: `bnox.deployment.webhook.address = "https://deploy.example.com";` (default `http://bnox-webhook.local`, internal-only). The address is the Caddy vhost — a real domain gets automatic TLS.
+- Register the webhook in GitHub/Forgejo pointing at that address + `/bnox/webhook/<thing>`, content-type JSON, push events.
 - The per-thing HMAC secret lives at `/var/lib/bnox/deploy/<thing>/webhook_secret` (write it, done — no rebuild).
 
 ## Rollback

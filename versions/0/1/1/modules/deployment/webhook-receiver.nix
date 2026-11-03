@@ -3,7 +3,7 @@ let
   receiverUser = "bnox-webhook-receiver";
   receiverGroup = "bnox-webhook-receiver";
   receiverPort = 8842;
-  receiverVhost = "http://bnox-webhook.local";
+  receiverVhost = config.bnox.deployment.webhook.address;
 
   handlerSource = ''
     import hashlib
@@ -114,6 +114,11 @@ let
   natsReady = config.services.nats.enable && config.services.nats.jetstream;
 in
 {
+  options.bnox.deployment.webhook.address = lib.mkOption {
+    type = lib.types.str;
+    default = "http://bnox-webhook.local";
+  };
+
   config = lib.mkMerge [
     {
       users.users.${receiverUser} = {

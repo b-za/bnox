@@ -22,7 +22,7 @@ my-hosts/
 {
   description = "my hosts on bnox";
 
-  inputs.bnox.url = "github:b-za/bnox?dir=versions/0/0/1";
+  inputs.bnox.url = "github:b-za/bnox?dir=versions/0/1/1";
 
   outputs =
     {
@@ -57,7 +57,7 @@ Notes:
 
 - Pinning happens twice: the `?dir=` selects the bnox version; the repo's `flake.lock` then freezes the exact commit. Because nixpkgs is taken from `bnox.inputs.nixpkgs`, a version pin freezes bnox **and** its nixpkgs together.
 - To upgrade bnox: change the `?dir=` to a newer version (or series) and `nix flake update bnox`. Hosts never drift onto an untested mix.
-- Local development before your host repo has a remote: `inputs.bnox.url = "git+file:../bnox?dir=versions/0/0/1";` (requires the bnox checkout to be committed).
+- Local development before your host repo has a remote: `inputs.bnox.url = "git+file:../bnox?dir=versions/0/1/1";` (requires the bnox checkout to be committed).
 
 ## 2. Write the host
 
@@ -75,7 +75,7 @@ This kexecs the target into a NixOS installer, wipes and repartitions the disks 
 
 After first boot:
 
-- SSH in as your user. The base ships no user on this version — declare one in your host config via plain `users.users.<name>` (with `isNormalUser`, `wheel`, and your `openssh.authorizedKeys.keys`), or you'll have no SSH access at all (root login and password auth are disabled). Version 0.1 adds a `bnox.users` option for this.
+- SSH in as your user. Version 0.1 ships **no user by default** — declare one in your host config via `bnox.users` (see [host-config.md](./host-config.md)) or you'll have no SSH access at all (root login and password auth are disabled).
 - `sudo tailscale up` to join the tailnet (Tailscale ships enabled but unauthenticated).
 
 ## 4. Day-to-day changes

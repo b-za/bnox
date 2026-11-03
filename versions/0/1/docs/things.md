@@ -8,6 +8,7 @@ A **thing** is an application hosted by bnox: a webapp, a static site, an HTTP A
 bnox.things.myapp = {
   enable = true;
   source = "/srv/myapp";               # git checkout on host (deployment syncs it)
+  branch = "main";                      # optional; default main, .bnox/ may declare it
   components.web.domain = "myapp.example.com";
 };
 ```

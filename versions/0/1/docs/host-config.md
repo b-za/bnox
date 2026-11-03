@@ -35,7 +35,21 @@ Note the `{ bnox, ... }:` head — `bnox` is passed as a specialArg by your host
 | **Hardware** | zero or more `bnox.hardware.*` | kernel modules, firmware (e.g. broadcom wifi) — cloud hosts usually need none; the generated `hardware-configuration.nix` covers it |
 | **Things** | zero or more `bnox.things.<name>` | which applications run here and their bindings ([things.md](./things.md)) |
 
-`modules/base/` is the implicit floor every host inherits (SSH hardening, Tailscale, firewall on, base packages, home-manager; declare your own users — this version ships none). Profiles diverge from that floor; they don't replace it.
+`modules/base/` is the implicit floor every host inherits (SSH hardening, Tailscale, firewall on, base packages, home-manager). Profiles diverge from that floor; they don't replace it.
+
+## Users — required
+
+Since 0.1 the base ships no user. Declare at least one via `bnox.users`, or the host has no SSH access (root login and password auth are disabled):
+
+```nix
+bnox.users.bh = {
+  keys = [ "ssh-ed25519 AAAA… your key" ];
+  wheel = true;
+  home = true;
+};
+```
+
+Each declared user becomes a normal user (with `wheel`/sudo unless `wheel = false`) carrying your authorized keys, and (unless `home = false`) the base home-manager dotfile module (bash, htop, tmux). Plain `users.users.*` overrides remain available for anything the option doesn't cover.
 
 ## Overriding bnox defaults
 
@@ -51,7 +65,7 @@ The bnox base never special-cases hosts: no host names, no per-host conditions i
 
 | In host config | In bnox (inherited) |
 |---|---|
-| hostname, network type (DHCP/static/wifi) | SSH hardening, users |
+| hostname, network type (DHCP/static/wifi), users (`bnox.users.*`) | SSH hardening, user creation |
 | profile + hardware selection | firewall defaults |
 | thing enable + bindings | platform services (Caddy, NATS, Podman) |
 | local `hardware-configuration.nix`, `disk-config.nix` | thing abstraction, hardening, deployment |

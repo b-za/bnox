@@ -1,6 +1,6 @@
-# bnox docs — series 0.0
+# bnox docs — series 0.1
 
-Consumer documentation for bnox versions 0.0.x. Start with [getting-started.md](./getting-started.md).
+Consumer documentation for bnox versions 0.1.x. Start with [getting-started.md](./getting-started.md).
 
 | Page | What it covers |
 |---|---|

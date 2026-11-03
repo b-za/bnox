@@ -5,6 +5,10 @@
     ./hardware-configuration.nix
   ];
 
+  bnox.users.<name> = {
+    keys = [ "ssh-ed25519 AAAA your-key-here" ];
+  };
+
   networking.hostName = "apphost";
   networking.useDHCP = true;
 

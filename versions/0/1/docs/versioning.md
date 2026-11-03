@@ -14,7 +14,7 @@ versions/
 
 - Numbering: `major/minor/patch`, semver meaning, **no dots, no padding**. `0/0/1` is the first version.
 - Each version directory is a full flake with its **own** `flake.lock`, so pinning a version freezes bnox *and* its nixpkgs together.
-- Hosts pin a version directory: `github:b-za/bnox?dir=versions/0/0/1`. Different hosts may sit on different versions indefinitely.
+- Hosts pin a version directory: `github:b-za/bnox?dir=versions/0/1/1`. Different hosts may sit on different versions indefinitely.
 
 ## The manifest
 
