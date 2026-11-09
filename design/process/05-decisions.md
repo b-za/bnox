@@ -485,4 +485,5 @@ D-009 (Hermes) is the first use of this deviation clause.
 - Fresh hosts get root via `sudo` out of the box; wheel membership remains the root grant, now actually usable.
 - bnox-bg drops its temporary host-side `wheelNeedsPassword = false` divergence when it bumps the pin to 0/2/0 (promotion path D-014 §10, exercised in reverse: divergence removed as the base absorbs it).
 - 0/1 hosts are frozen and unaffected; they carry the lockout unless their host repo sets the NixOS option itself.
-- 0/2/0 stays `status: wip` until a fresh nixos-anywhere install (agenthub repin) confirms no degraded boot, then flips to done.
+- 0/2/0 verified on agenthub 2026-11-09 (bnox-bg repin, divergence dropped, rebuild + fresh boot: `running`, stream-init active, stream created) and frozen (`status: done`). Fresh nixos-anywhere installs of older hosts will confirm the same on their own schedule — the unit's behavior is boot-path identical.
+- Found during verification (open follow-up): consumer repos' `nix flake update bnox` re-resolves bnox's transitive nixpkgs to the `nixos-26.05` branch tip rather than the version-frozen tarball — the "version freezes bnox and its nixpkgs" invariant needs an explicit `follows` in host repos (or an equivalent locking procedure) plus a series-docs note.

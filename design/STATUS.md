@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-11-08 (Series 0.2 cut at `0/2/0` — D-015, prompted by the agenthub nixos-anywhere install: passwordless wheel sudo (0/1 hosts had no path to root by construction), nats-stream-init fixed (could never succeed — verified against pinned nats-server 2.12.3/natscli 0.3.0), explicit locked `hashedPassword`, Ubuntu install recipe in series docs. agenthub itself is installed on 0/1/2 (degraded stream-init, sudo via bnox-bg host divergence); 0/2/0 is `wip` pending the repin + fresh-boot confirmation. Previous: Series 0.1 at patch 2 `0/1/2` DONE — key-only SSH fully enforced.)
+**Last updated:** 2026-11-09 (Series 0.2 `0/2/0` DONE and verified on agenthub: repinned bnox-bg, dropped the host-side sudo divergence, rebuilt, fresh boot comes up `running` with stream-init active and the `host-deploy-logs` stream created. D-015 records the rationale. Open follow-up found during verification: consumer `nix flake update bnox` re-resolves bnox's transitive nixpkgs to the nixos-26.05 branch tip instead of the version-frozen tarball — agenthub has been running branch-tip nixpkgs since the 0/1 bumps; fix belongs in host repos (explicit follows) + a series-docs note. Previous: Series 0.1 at patch 2 `0/1/2` DONE — key-only SSH fully enforced.)
 
 ## Current phase
 
