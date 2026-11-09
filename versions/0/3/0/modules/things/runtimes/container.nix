@@ -43,7 +43,7 @@ let
     map (
       comp:
       lib.nameValuePair comp.serviceName {
-        serviceConfig = hardening.bundle {
+        serviceConfig = (hardening.bundle {
           writablePaths = [
             "/var/lib/${comp.thing}"
             "/var/lib/bnox/secrets/${comp.thing}"
@@ -54,6 +54,8 @@ let
               "10.0.2.2"
               "127.0.0.1"
             ];
+        }) // {
+          ProtectHome = "read-only";
         };
       }
     ) containerComponents

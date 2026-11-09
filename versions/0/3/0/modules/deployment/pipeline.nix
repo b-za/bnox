@@ -172,6 +172,7 @@ let
           ReadWritePaths = "/srv/${name} /var/lib/${name} /var/lib/containers /nix/var/nix";
           IPAddressDeny = "any";
           IPAddressAllow = "127.0.0.0/8 ::1";
+          ProtectHome = "read-only";
         };
         script = ''
           set -uo pipefail
