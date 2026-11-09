@@ -24,6 +24,22 @@
       IPAddressAllow = lib.concatStringsSep " " ipAddressAllow;
     };
 
+  runnerBundle =
+    { ipAddressAllow ? [ ] }:
+    {
+      ProtectSystem = "strict";
+      ProtectHome = "read-only";
+      ReadWritePaths = "/var/lib/containers /var/cache/containers";
+      PrivateTmp = "true";
+      RestrictAddressFamilies = "AF_UNIX AF_INET AF_INET6 AF_NETLINK";
+      ProtectKernelModules = "true";
+      ProtectKernelLogs = "true";
+      ProtectClock = "true";
+      ProtectProc = "invisible";
+      IPAddressDeny = "any";
+      IPAddressAllow = lib.concatStringsSep " " ipAddressAllow;
+    };
+
   overrideModule =
     { name, ... }:
     {
