@@ -61,7 +61,7 @@ Notes: `IPAddressAllow` on the pinned systemd (260) has no port scoping, so the 
 
 ## Isolation
 
-Every enabled thing gets a dedicated system user and a standard systemd hardening bundle: filesystem lockdown, capability stripping, syscall filtering, cgroup resource caps, network egress allow-list. Overrides are per-host, visible in host config — never silent.
+Every enabled thing gets a dedicated system user — the host-side boundary: owner of its `/var/lib/<thing>` state and its secrets slots. Unit hardening depends on the runtime: host-process things get the standard bundle (filesystem lockdown, capability stripping, syscall filtering, process visibility, network egress allow-list); container things get the runner profile (podman is the payload's sandbox — the unit keeps the filesystem layout, the address families and the egress allow-list, and drops the process-level lockdown that rootful podman cannot run under). Container payloads run as container root — the container is their isolation boundary; a thing wanting a non-root payload user bakes one into its own image. Overrides are per-host, visible in host config — never silent.
 
 ## Fixtures
 

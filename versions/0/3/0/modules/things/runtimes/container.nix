@@ -30,7 +30,6 @@ let
       comp:
       lib.nameValuePair comp.containerName {
         image = "${comp.containerName}:current";
-        user = comp.user;
         environmentFiles = map (slot: "/var/lib/bnox/secrets/${comp.thing}/${slot}") comp.allSlots;
         environment = lib.optionalAttrs comp.nats { NATS_URL = "nats://10.0.2.2:4222"; };
         extraOptions = lib.optional comp.nats "--network=slirp4netns:allow_host_loopback=true";
