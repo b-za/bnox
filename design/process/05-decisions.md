@@ -461,3 +461,28 @@ D-009 (Hermes) is the first use of this deviation clause.
 - D-012 Phase 3 (uqbn migration) host lands in bnox-sn.
 - README story changes: consumers create a host repo pinning a version dir; the "add a host dir to bnox" story is dead.
 - 07-diversions Q-D2 superseded (discovery moves to host repos); Q-D1/Q-D3 unchanged; 06-base-design's `hosts/` layout superseded.
+
+## D-015 — Passwordless wheel sudo + first-install fixes (series 0.2)
+**Date:** 2026-11-08
+**Status:** accepted
+**Context:** The first real nixos-anywhere install of a bnox host (agenthub on a KVM VPS, built on 0/1/2) surfaced two structural problems. (1) Every 0/1 host had **no path to root by construction**: `bnox.users` creates key-only accounts with locked passwords (no password field set), sshd is hardened key-only with `PermitRootLogin = "no"` (0/1/2 closed the last PAM gap with `KbdInteractiveAuthentication = false`), but `security.sudo.wheelNeedsPassword` kept its NixOS default `true` — so sudo prompted for a password that can never be satisfied. Only the provider rescue console reached root. (2) `bnox-nats-stream-init` failed deterministically on every fresh boot (~16s, exit 1, boot degraded): the stream config JSON omitted `num_replicas`, and natscli's `--config` loader applies no defaults for absent fields, so every `stream add` was rejected with "must be >= 1 but found 0"; additionally `stream update` prompts for confirmation without a TTY and would have zeroed `-1` "unlimited" limits to `0`. Root cause verified empirically against the pinned nats-server 2.12.3 + natscli 0.3.0 (the job 09 design notes flagged the CLI invocations as runtime-deferred/untestable on darwin — that debt came due).
+
+**Decision:**
+
+1. **`security.sudo.wheelNeedsPassword = false`, hardcoded in the base** (`modules/base/users.nix`) with a rationale comment. Not a bnox option: `bnox.users` has no mechanism to set passwords, so passworded sudo is not an alternative policy within bnox — it is a lockout. An option whose other value is always-wrong is misconfiguration surface. Divergent hosts that set real passwords use the NixOS option directly.
+2. **Accounts explicitly locked: `hashedPassword = mkDefault "!"`.** Was implicit (NixOS's null default also lands as locked); now self-documenting and immune to upstream default changes. Verified against nixpkgs at the pinned rev: `allowsLogin` treats `"!"` as first-class "password login disabled" (no invalid-hash warning), and a host's own `password`/`hashedPassword` wins by documented NixOS precedence (at most an informational multiple-passwords warning, no assertion).
+3. **Stream-init config complete and explicit** (all limits spelled out as `-1`/`0`, `num_replicas = 1`, durations as nanosecond JSON numbers), `update` gains `--force` (no TTY), and an update failure no longer counts as success. The unit stays enabled under the existing `mkIf natsReady` — a unit that deterministically fails while its precondition holds is a bug, not a gating design. Retry loop and `after/requires nats.service` unchanged (the failure was never a race; it's a localhost connection).
+4. **Series 0.2 (`versions/0/2/0`), not a patch:** (1) is a deliberate base-policy change (security posture of every host), which the "patch = fixes only" rule excludes. The series bump also carries the consumer docs (Ubuntu nixos-anywhere recipe, passwordless-sudo note) per D-014's series-docs model.
+
+**Alternatives considered:**
+
+- **`bnox.security.passwordlessSudo` option (default true):** rejected — no coherent `false` value exists within bnox; the NixOS option is the override point.
+- **Gate stream-init (ConditionPathExists) / add network-online.target:** rejected — the stream is host-level deploy audit plumbing (D-011 §3), present per-host regardless of things; the mkIf on natsReady is the correct and existing gate; the connection is localhost and the retry loop already bounds JS init.
+- **Initial root/wheel password + forced change:** rejected — puts a secret in the store and opens a one-boot window; key-only is the model.
+
+**Consequences:**
+
+- Fresh hosts get root via `sudo` out of the box; wheel membership remains the root grant, now actually usable.
+- bnox-bg drops its temporary host-side `wheelNeedsPassword = false` divergence when it bumps the pin to 0/2/0 (promotion path D-014 §10, exercised in reverse: divergence removed as the base absorbs it).
+- 0/1 hosts are frozen and unaffected; they carry the lockout unless their host repo sets the NixOS option itself.
+- 0/2/0 stays `status: wip` until a fresh nixos-anywhere install (agenthub repin) confirms no degraded boot, then flips to done.

@@ -1,6 +1,6 @@
 # Status
 
-**Last updated:** 2026-11-03 (Series 0.1 at patch 2: `0/1/2` DONE — key-only SSH fully enforced (`KbdInteractiveAuthentication=false` closes the NixOS-default PAM kbd-interactive gap); docs gained the ssh-copy-id pre-step. All host repos on `0/1/2`. Remaining: operator installs agenthub via nixos-anywhere (key pre-seeded on the VPS).)
+**Last updated:** 2026-11-08 (Series 0.2 cut at `0/2/0` — D-015, prompted by the agenthub nixos-anywhere install: passwordless wheel sudo (0/1 hosts had no path to root by construction), nats-stream-init fixed (could never succeed — verified against pinned nats-server 2.12.3/natscli 0.3.0), explicit locked `hashedPassword`, Ubuntu install recipe in series docs. agenthub itself is installed on 0/1/2 (degraded stream-init, sudo via bnox-bg host divergence); 0/2/0 is `wip` pending the repin + fresh-boot confirmation. Previous: Series 0.1 at patch 2 `0/1/2` DONE — key-only SSH fully enforced.)
 
 ## Current phase
 
