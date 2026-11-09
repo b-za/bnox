@@ -487,3 +487,29 @@ D-009 (Hermes) is the first use of this deviation clause.
 - 0/1 hosts are frozen and unaffected; they carry the lockout unless their host repo sets the NixOS option itself.
 - 0/2/0 verified on agenthub 2026-11-09 (bnox-bg repin, divergence dropped, rebuild + fresh boot: `running`, stream-init active, stream created) and frozen (`status: done`). Fresh nixos-anywhere installs of older hosts will confirm the same on their own schedule — the unit's behavior is boot-path identical.
 - Found during verification (open follow-up): consumer repos' `nix flake update bnox` re-resolves bnox's transitive nixpkgs to the `nixos-26.05` branch tip rather than the version-frozen tarball — the "version freezes bnox and its nixpkgs" invariant needs an explicit `follows` in host repos (or an equivalent locking procedure) plus a series-docs note.
+
+## D-016 — Container NATS reachability knob (series 0.3)
+**Date:** 2026-11-09
+**Status:** accepted
+**Context:** agenthub's NATS agent platform (bnox-bg `docs/agenthub-nats-plan.md`, decision 14) needs worker containers to reach the host broker, which binds 127.0.0.1 only under nkey auth. bnox container things run rootful podman under the standard hardening bundle (IPAddressDeny=any). Empirical facts on agenthub (podman 5.8.2, systemd 260.2, nixpkgs 8623c4c — every one verified live, see the step-2 as-built notes in bnox-bg): (a) the netavark bridge cannot reach host-loopback services (10.88.0.1:4222 times out); (b) pasta is rootless-only on this podman; (c) slirp4netns works rootful but podman passes `--disable-host-loopback` by default, so the container must run `--network=slirp4netns:allow_host_loopback=true` to reach 127.0.0.1-bound services at the gateway 10.0.2.2; (d) under the bundle the cgroup-bpf filter sees two connects per broker session — the container's 10.0.2.2:4222 and slirp's host-side 127.0.0.1:4222 — so IPAddressAllow needs both addresses (10.0.2.2 alone = silent connect timeouts); (e) systemd 260 has no port-scoped IPAddressAllow (`:443` fails to parse: "Failed to parse IP address prefix"), which makes 0/2/0's outboundHTTPS/host-install allow lists load-invalid — a latent bug, never exercised because no such thing had ever started.
+
+**Decision:**
+
+1. **New thing-scoped option `hardening.network.nats`** (sibling of outboundHTTPS; self-declarable in `.bnox/thing.nix` as `nats = true`). For container things it implies: slirp4netns networking with allow_host_loopback, `IPAddressAllow = [10.0.2.2 127.0.0.1]`, `NATS_URL=nats://10.0.2.2:4222` in the container env, and an implied `nats_seed` slot. host-install things get the slot plus `NATS_URL=nats://127.0.0.1:4222` (host netns). The implied slot is the framework's first magic slot name, chosen (over step-3 thing-declared slots, the alternative bh was offered) so "declares NATS use", "gets a credential path" and "gets network reach" cannot drift apart. Slot contract: `/var/lib/bnox/secrets/<thing>/nats_seed` is an env file containing `NATS_SEED=<seed>`, host-written at runtime (agenthub's keygen does the write); rotation restarts the thing via the usual path unit. Seeds stay out of repos and the store (platform plan decision 3).
+2. **slirp4netns lands in `virtualisation.podman.extraPackages`** automatically when any enabled container thing sets nats (the oci-containers units resolve podman's wrapped package, so the helper is on PATH exactly when needed).
+3. **Port-scoped IPAddressAllow is unrepresentable on the pinned systemd**: outboundHTTPS and host-install now allow `any` — honest degradation (an egress-allowing filter without port scoping is no filter), documented in the manifest and series docs; loopback-only units (hermes, platform step 4) pin per-unit allowlists in host config per the visible-override rule.
+4. **Series 0/3** (feature ⇒ minor per D-014 §11); carries the parse fix, which could not have shipped as a 0/2 patch anyway (no fixes are copied back into frozen versions).
+
+**Alternatives considered:**
+
+- **pasta networking:** rejected — rootless-only on podman 5.8.2; bnox container units are rootful.
+- **`--network=host`:** rejected — abandons netns isolation for a headless worker.
+- **Broker on the bridge address:** rejected — the platform plan locks the broker to 127.0.0.1 (decision 1).
+- **Thing-declared `nats_seed` slot (defer to the platform's step 3):** rejected as the default — flag/slot/network drift is exactly the silent inconsistency bnox exists to prevent.
+- **Keep the `:443` entries until systemd grows port scoping:** rejected — they are load-invalid today; no 0/2/0 thing ever started with them.
+
+**Consequences:**
+
+- bnox-bg (agenthub) repins to 0/3/0; step-3 worker things declare `nats = true` in `.bnox/thing.nix` and get the full wiring; the host's keygen gains one env-file write per NATS thing.
+- Hosts pinned to 0/2/0 with outboundHTTPS containers or host-install things were already broken (units fail to start on the first run); 0/3/0 is the fix path — versioning working as designed.
+- The container→broker path exposes the host loopback to the container by design (that is what allow_host_loopback means); the broker's nkey auth is the enforcement layer. The knob stays opt-in per thing.

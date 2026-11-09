@@ -22,7 +22,7 @@ Each thing repo has a `.bnox/` directory at its root:
 ```
 myapp/
 ├── .bnox/
-│   ├── thing.nix          ← manifest: name, deps, thing-level secrets
+│   ├── thing.nix          ← manifest: deps, thing-level secrets, nats = true for broker things
 │   └── web.nix            ← per-component: shape, runtime, ingressPort, …
 ├── flake.nix              ← exposes images.<system>.<component> (container runtime)
 └── …                      ← the app itself
@@ -46,6 +46,18 @@ bnox loads these at evaluation and merges them as defaults (`mkDefault`); host c
 |---|---|
 | `container` (default) | Nix-built image (`pkgs.dockerTools.*` — Dockerfiles are forbidden), run under Podman with the full hardening bundle |
 | `host-install` | thing installs/updates itself on the host; bnox provides only user, systemd unit, hardening, secrets (rare; requires a logged deviation — see Hermes) |
+
+### The `nats` knob
+
+A thing that talks to the host NATS broker declares `nats = true` in `.bnox/thing.nix` (or `bnox.things.<name>.hardening.network.nats` in host config). Container things then get:
+
+- slirp4netns networking with the host loopback reachable at the fixed gateway `10.0.2.2`; the broker address is injected as `NATS_URL=nats://10.0.2.2:4222`
+- an egress allow-list of exactly `10.0.2.2` + `127.0.0.1` under the standard deny-any filter (both required: the slirp relay's host-side connect targets loopback)
+- an implied `nats_seed` slot (see [secrets.md](./secrets.md)) holding the nkey seed
+
+host-install things get the same slot and `NATS_URL=nats://127.0.0.1:4222` (they share the host netns).
+
+Notes: `IPAddressAllow` on the pinned systemd (260) has no port scoping, so the allows are address-wide — the broker's own auth (nkeys) is the real door. Combining `nats` with `ingressPort` is untested; workers are headless.
 
 ## Isolation
 

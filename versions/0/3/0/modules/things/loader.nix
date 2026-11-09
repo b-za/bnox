@@ -15,6 +15,7 @@ let
         deps = lib.mkDefault (manifest.deps or [ ]);
         secrets = lib.mkDefault (manifest.secrets or [ ]);
         branch = lib.mkDefault (manifest.branch or "main");
+        hardening.network.nats = lib.mkDefault (manifest.nats or false);
       };
     };
 

@@ -51,3 +51,7 @@ Things declare slot names in `.bnox/`; the host binds them; values are plain fil
 Ownership is set to the thing's user automatically. Each slot is watched by a systemd-path unit: write a new value (SSH, scp, whatever) and the thing's service restarts — **no rebuild, no re-encryption**. This is deliberate: secrets an application reads change far more often than secrets the OS needs.
 
 A `nats-kv` backend (pull from NATS KV, encrypted with the host key) is designed-for but not built; the slot contract is identical, so things and host configs won't change if it lands.
+
+### The implied `nats_seed` slot
+
+Things that declare `nats = true` ([things.md](./things.md)) get an extra `nats_seed` slot they did not list: bnox adds it automatically, so "declares NATS use", "gets a credential" and "gets network reach" cannot drift apart. The slot is an env file — one line, `NATS_SEED=<nkey seed>` — written by the host at runtime (keygen side; seeds never live in a repo or the store). Writing it works like any slot: the thing's service restarts.

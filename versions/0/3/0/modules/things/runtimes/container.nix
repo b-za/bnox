@@ -1,4 +1,4 @@
-{ lib, config, ... }:
+{ lib, config, pkgs, ... }:
 let
   hardening = import ../hardening.nix { inherit lib; };
 
@@ -18,8 +18,9 @@ let
         serviceName = "${containerBackend}-${thing.name}-${compName}";
         user = thing.name;
         inherit (comp) ingressPort;
-        allSlots = thing.secrets ++ comp.secrets;
+        allSlots = thing.secrets ++ comp.secrets ++ lib.optional thing.hardening.network.nats "nats_seed";
         outboundHTTPS = thing.hardening.network.outboundHTTPS;
+        nats = thing.hardening.network.nats;
       }
     ) (lib.filterAttrs (_: comp: comp.enable && comp.runtime == "container" && comp.shape != "static-site") thing.components)
   ) enabledThingsList;
@@ -31,6 +32,8 @@ let
         image = "${comp.containerName}:current";
         user = comp.user;
         environmentFiles = map (slot: "/var/lib/bnox/secrets/${comp.thing}/${slot}") comp.allSlots;
+        environment = lib.optionalAttrs comp.nats { NATS_URL = "nats://10.0.2.2:4222"; };
+        extraOptions = lib.optional comp.nats "--network=slirp4netns:allow_host_loopback=true";
         ports = lib.optional (comp.ingressPort != null) "127.0.0.1:${toString comp.ingressPort}:${toString comp.ingressPort}";
       }
     ) containerComponents
@@ -45,7 +48,12 @@ let
             "/var/lib/${comp.thing}"
             "/var/lib/bnox/secrets/${comp.thing}"
           ];
-          ipAddressAllow = lib.optional comp.outboundHTTPS ":443";
+          ipAddressAllow =
+            lib.optional comp.outboundHTTPS "any"
+            ++ lib.optionals comp.nats [
+              "10.0.2.2"
+              "127.0.0.1"
+            ];
         };
       }
     ) containerComponents
@@ -70,6 +78,10 @@ let
       restartUnits = lib.unique (map (p: p.serviceName) pairs);
     }
   ) slotGroups;
+
+  natsContainerThings = lib.any (
+    comp: comp.nats
+  ) containerComponents;
 in
 {
   config.virtualisation.oci-containers.containers = containers;
@@ -77,4 +89,8 @@ in
   config.systemd.services = serviceHardening;
 
   config.bnox.secrets.fileSlots = fileSlots;
+
+  config.virtualisation.podman.extraPackages = lib.mkIf (
+    containerBackend == "podman" && natsContainerThings
+  ) [ pkgs.slirp4netns ];
 }

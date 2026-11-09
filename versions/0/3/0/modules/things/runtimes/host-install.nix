@@ -15,7 +15,8 @@ let
         serviceName = "${thing.name}-${compName}";
         user = thing.name;
         inherit (comp) execStart;
-        allSlots = thing.secrets ++ comp.secrets;
+        nats = thing.hardening.network.nats;
+        allSlots = thing.secrets ++ comp.secrets ++ lib.optional thing.hardening.network.nats "nats_seed";
       }
     ) (lib.filterAttrs (_: comp: comp.enable && comp.runtime == "host-install") thing.components)
   ) enabledThingsList;
@@ -33,16 +34,13 @@ let
           WorkingDirectory = "/var/lib/${comp.thing}";
           Restart = "on-failure";
           RestartSec = 5;
-          Environment = [ "HOME=/var/lib/${comp.thing}" ];
+          Environment = [ "HOME=/var/lib/${comp.thing}" ] ++ lib.optional comp.nats "NATS_URL=nats://127.0.0.1:4222";
         } // (hardening.bundle {
           writablePaths = [
             "/var/lib/${comp.thing}"
             "/var/lib/bnox/secrets/${comp.thing}"
           ];
-          ipAddressAllow = [
-            ":443"
-            ":53"
-          ];
+          ipAddressAllow = [ "any" ];
         });
       }
     ) hostInstallComponents

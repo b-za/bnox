@@ -31,9 +31,15 @@
         type = lib.types.submodule {
           options.network = lib.mkOption {
             type = lib.types.submodule {
-              options.outboundHTTPS = lib.mkOption {
-                type = lib.types.bool;
-                default = false;
+              options = {
+                outboundHTTPS = lib.mkOption {
+                  type = lib.types.bool;
+                  default = false;
+                };
+                nats = lib.mkOption {
+                  type = lib.types.bool;
+                  default = false;
+                };
               };
             };
             default = { };
