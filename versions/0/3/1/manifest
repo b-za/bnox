@@ -1,0 +1,4 @@
+status: wip
+date: 2026-11-11
+nixpkgs: nixos-26.05 (see flake.lock; unchanged from 0/3/0)
+changes: (in progress — D-017)

@@ -1,0 +1,5 @@
+{
+  deps = [ ];
+  secrets = [ ];
+  components = [ "web" ];
+}
