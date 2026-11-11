@@ -38,6 +38,17 @@ myapp/
 
 bnox loads these at evaluation and merges them as defaults (`mkDefault`); host config can still override per host. A thing without `.bnox/` fails evaluation loudly.
 
+## Plain config: `env` (from 0.4)
+
+Non-secret settings go in `env`, never in a secret slot. The thing's `.bnox/thing.nix` gives defaults; host config wins per key. Every component of the thing gets them as environment variables (both runtimes). Changing a value takes a rebuild.
+
+```nix
+# .bnox/thing.nix
+env = { LOG_LEVEL = "info"; };
+# host config
+bnox.things.gsheet.env.GSHEET_ADMINS = "brix";
+```
+
 ## Shapes
 
 | Shape | Meaning | bnox provides |

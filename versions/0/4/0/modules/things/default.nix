@@ -73,6 +73,12 @@ let
           type = lib.types.listOf lib.types.str;
           default = [ ];
         };
+        # D-019: plain (non-secret) config for every component of the thing.
+        # .bnox/thing.nix `env` gives defaults; host config wins per key.
+        env = lib.mkOption {
+          type = lib.types.attrsOf lib.types.str;
+          default = { };
+        };
         components = lib.mkOption {
           type = lib.types.attrsOf (lib.types.submoduleWith {
             modules = [ componentSubmodule loader.componentSubmodule ];

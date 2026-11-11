@@ -16,6 +16,7 @@ let
         user = thing.name;
         inherit (comp) execStart;
         nats = thing.hardening.network.nats;
+        env = thing.env;
         allSlots = thing.secrets ++ comp.secrets ++ lib.optional thing.hardening.network.nats "nats_seed";
       }
     ) (lib.filterAttrs (_: comp: comp.enable && comp.runtime == "host-install") thing.components)
@@ -34,7 +35,7 @@ let
           WorkingDirectory = "/var/lib/${comp.thing}";
           Restart = "on-failure";
           RestartSec = 5;
-          Environment = [ "HOME=/var/lib/${comp.thing}" ] ++ lib.optionals comp.nats [
+          Environment = [ "HOME=/var/lib/${comp.thing}" ] ++ lib.mapAttrsToList (k: v: "${k}=${v}") comp.env ++ lib.optionals comp.nats [
             "NATS_URL=nats://127.0.0.1:4222"
             # D-018: natscli wants a seed *file* (G2); readable by the thing's group
             "NATS_NKEY=/var/lib/bnox/nats/${comp.thing}.seed"

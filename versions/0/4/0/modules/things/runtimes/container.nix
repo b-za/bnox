@@ -21,6 +21,7 @@ let
         allSlots = thing.secrets ++ comp.secrets ++ lib.optional thing.hardening.network.nats "nats_seed";
         outboundHTTPS = thing.hardening.network.outboundHTTPS;
         nats = thing.hardening.network.nats;
+        env = thing.env;
       }
     ) (lib.filterAttrs (_: comp: comp.enable && comp.runtime == "container" && comp.shape != "static-site") thing.components)
   ) enabledThingsList;
@@ -31,7 +32,7 @@ let
       lib.nameValuePair comp.containerName {
         image = "${comp.containerName}:current";
         environmentFiles = map (slot: "/var/lib/bnox/secrets/${comp.thing}/${slot}") comp.allSlots;
-        environment = lib.optionalAttrs comp.nats { NATS_URL = "nats://10.0.2.2:4222"; };
+        environment = comp.env // lib.optionalAttrs comp.nats { NATS_URL = "nats://10.0.2.2:4222"; };
         extraOptions = lib.optional comp.nats "--network=slirp4netns:allow_host_loopback=true";
         ports = lib.optional (comp.ingressPort != null) "127.0.0.1:${toString comp.ingressPort}:${toString comp.ingressPort}";
       }

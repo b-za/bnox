@@ -14,6 +14,7 @@ let
       config = lib.mkIf config.enable {
         deps = lib.mkDefault (manifest.deps or [ ]);
         secrets = lib.mkDefault (manifest.secrets or [ ]);
+        env = lib.mapAttrs (_: lib.mkDefault) (manifest.env or { });
         branch = lib.mkDefault (manifest.branch or "main");
         # D-018: nats = true, or { offer = {publish, subscribe}; roles = { <r> = {…}; }; }
         hardening.network.nats = lib.mkDefault (
