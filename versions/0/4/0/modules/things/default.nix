@@ -147,6 +147,7 @@ in
     ./user.nix
     ./shapes/default.nix
     ./runtimes/default.nix
+    ./egress.nix
     loader.topLevel
   ];
 

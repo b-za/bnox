@@ -49,6 +49,27 @@ env = { LOG_LEVEL = "info"; };
 bnox.things.gsheet.env.GSHEET_ADMINS = "brix";
 ```
 
+## Outbound network: `egress` (from 0.4)
+
+Locked by default: a thing reaches nothing beyond loopback until the host grants it (D-019).
+
+```nix
+# .bnox/thing.nix — what the thing needs
+egress = [ "sheets.googleapis.com" ];   # or "any"
+# host config — the ceiling (a domain also covers its subdomains)
+bnox.things.gsheet.egress.grant = [ "googleapis.com" ];   # or "any"
+```
+
+| needs | grant | result |
+|---|---|---|
+| list | list | the needed domains the grant covers, via the thing's proxy |
+| list | `"any"` | the needed domains, via the proxy |
+| `"any"` | list | the granted domains, via the proxy |
+| `"any"` | `"any"` | direct access |
+| anything | nothing | none (needs not granted show up as rebuild warnings) |
+
+Each thing with a domain list gets **its own** proxy (`bnox-egress-<thing>`, tinyproxy on `127.0.0.1`, ports from `bnox.egress.basePort` = 18100, one per thing) that allows exactly its domains, and `HTTPS_PROXY`/`HTTP_PROXY` in its environment. Containers reach it through slirp at `10.0.2.2`. Software that ignores `HTTPS_PROXY` simply cannot get out. `hardening.network.outboundHTTPS` is gone — use `egress`.
+
 ## Shapes
 
 | Shape | Meaning | bnox provides |
