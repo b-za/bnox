@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Fix frontmatter for all markdown files in corpus
+
+set -euo pipefail
+
+CORPUS_DIRS=("docs/graph" "tools/meta" "tools/inital")
+
+mapfile -t all_files < <(find "${CORPUS_DIRS[@]}" -name "*.md" -type f 2>/dev/null | sort)
+
+echo "Processing ${#all_files[@]} files..."
+
+for file in "${all_files[@]}"; do
+  if grep -q '^alias:$' "$file" 2>/dev/null; then
+    echo "  Already fixed: $file"
+    continue
+  fi
+  
+  python3 << 'PYEOF'
+import sys
+import re
+
+file = sys.argv[1]
+
+with open(file, 'r') as f:
+    content = f.read()
+
+if not content.startswith('---'):
+    print(f"  No frontmatter: {file}")
+    sys.exit(0)
+
+parts = content.split('---', 2)
+if len(parts) < 3:
+    print(f"  Invalid frontmatter: {file}")
+    sys.exit(0)
+
+fm = parts[1]
+body = parts[2] if len(parts) > 2 else ""
+
+# Extract fields
+def extract_field(fm, key):
+    m = re.search(rf'^{key}:\s*["\']?([^"\']+)["\']?', fm, re.MULTILINE)
+    return m.group(1) if m else None
+
+id_val = extract_field(fm, 'id')
+type_val = extract_field(fm, 'type')
+title_val = extract_field(fm, 'title')
+
+# Extract alias
+alias_items = []
+alias_inline = re.search(r'^alias:\s*\[([^\]]+)\]', fm, re.MULTILINE)
+if alias_inline:
+    alias_items = [x.strip().strip('"\'') for x in alias_inline.group(1).split(',') if x.strip()]
+else:
+    # Check multiline - find alias: then collect - items
+    in_alias = False
+    for line in fm.split('\n'):
+        if line.strip().startswith('alias:'):
+            in_alias = True
+            continue
+        if in_alias:
+            if line.strip() and not line.strip().startswith('-'):
+                in_alias = False
+            m = re.match(r'^\s*-\s*["\']?([^"\']+)["\']?', line)
+            if m:
+                alias_items.append(m.group(1))
+
+# Extract tags
+tags_items = []
+tags_inline = re.search(r'^tags:\s*\[([^\]]+)\]', fm, re.MULTILINE)
+if tags_inline:
+    tags_items = [x.strip().strip('"\'').lstrip('#') for x in tags_inline.group(1).split(',') if x.strip()]
+else:
+    in_tags = False
+    for line in fm.split('\n'):
+        if line.strip().startswith('tags:'):
+            in_tags = True
+            continue
+        if in_tags:
+            if line.strip() and not line.strip().startswith('-'):
+                in_tags = False
+            m = re.match(r'^\s*-\s*["\']?([^"\']+)["\']?', line)
+            if m:
+                tags_items.append(m.group(1).lstrip('#'))
+
+# Generate defaults if missing
+if not alias_items:
+    alias_items = [title_val] if title_val else ([id_val] if id_val else ["Untitled"])
+
+if not tags_items:
+    tags_items = [type_val] if type_val else ["untagged"]
+
+# Build new frontmatter - keep only non-array key:value fields
+key_fields = {}
+for line in fm.split('\n'):
+    line_stripped = line.strip()
+    if not line_stripped or line_stripped.startswith('#'):
+        continue
+    m = re.match(r'^(\w+):\s*(.+)', line)
+    if m and m.group(1) not in ('alias', 'tags'):
+        # Check if this line is an array start
+        if not m.group(2).strip().startswith('['):
+            key_fields[m.group(1)] = m.group(2)
+
+# Special handling: keep status, date, supersedes, topic, etc.
+special_keys = ['status', 'date', 'supersedes', 'topic', 'scope', 'generated_from', 'last_generated', 'depends_on', 'priority', 'entries']
+for k in special_keys:
+    v = extract_field(fm, k)
+    if v:
+        key_fields[k] = v
+
+# Build new frontmatter
+new_fm_lines = []
+for k, v in key_fields.items():
+    new_fm_lines.append(f"{k}: {v}")
+
+new_fm_lines.append("alias:")
+for a in alias_items:
+    new_fm_lines.append(f'  - "{a}"')
+
+new_fm_lines.append("tags:")
+for t in tags_items:
+    new_fm_lines.append(f'  - "{t}"')
+
+new_content = '---\n' + '\n'.join(new_fm_lines) + '\n---' + body
+
+with open(file + '.tmp', 'w') as f:
+    f.write(new_content)
+
+print(f"  Fixed: {file}")
+PYEOF
+  "$file"
+  
+  if [[ -f "${file}.tmp" ]]; then
+    mv "${file}.tmp" "$file"
+  fi
+done
+
+echo "Done."

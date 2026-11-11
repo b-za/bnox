@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+"""
+Hows Index Generator
+Regenerates the hows-index GENERATED fence in AGENTS.md from files
+carrying a `how:` frontmatter category. See tools/meta/260831210001-EGOC.
+"""
+import re
+import argparse
+from pathlib import Path
+
+CATEGORIES = ["convention", "working-rule", "protocol", "policy",
+              "standard", "safeguard", "template"]
+CORPUS_DIRS = [Path("docs/graph"), Path("tools/meta"), Path("tools/checks")]
+FENCE_ID = "hows-index"
+START = f"<!-- GENERATED:START:{FENCE_ID} -->"
+END = f"<!-- GENERATED:END:{FENCE_ID} -->"
+
+
+def first_fm_alias(fm):
+    m = re.search(r'^alias:\s*\[\s*"([^"]+)"', fm, re.MULTILINE)
+    if m:
+        return m.group(1)
+    m = re.search(r'^alias:\s*\n(?:  - "[^"]+"\n?)+', fm, re.MULTILINE)
+    if m:
+        first = re.search(r'-\s*"([^"]+)"', m.group(0))
+        if first:
+            return first.group(1)
+    return None
+
+
+def scan():
+    hows = []
+    for d in CORPUS_DIRS:
+        if not d.exists():
+            continue
+        for f in sorted(d.glob("*.md")):
+            content = f.read_text()
+            m = re.match(r'^---\n(.*?)\n---', content, re.DOTALL)
+            if not m:
+                continue
+            fm = m.group(1)
+            hm = re.search(r'^how:\s*"?([a-z-]+)"?', fm, re.MULTILINE)
+            if not hm:
+                continue
+            idm = re.search(r'^id:\s*"?([0-9]{12}-[A-Z0-9]{4})"?', fm, re.MULTILINE)
+            if not idm:
+                continue
+            fid = idm.group(1)
+            alias = first_fm_alias(fm) or fid
+            hows.append((hm.group(1), str(d), fid, alias))
+    return hows
+
+
+def build_index(hows):
+    lines = []
+    for cat in CATEGORIES:
+        entries = sorted([h for h in hows if h[0] == cat], key=lambda h: (h[1], h[2]))
+        for _, d, fid, alias in entries:
+            lines.append(f"- [[{d}/{fid}|{alias}]] — `{cat}`")
+    unknown = [h for h in hows if h[0] not in CATEGORIES]
+    for cat, d, fid, alias in sorted(unknown, key=lambda h: (h[1], h[2])):
+        lines.append(f"- [[{d}/{fid}|{alias}]] — `{cat}` (unknown category)")
+    return lines
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--write', action='store_true')
+    parser.add_argument('--output-path')
+    args = parser.parse_args()
+
+    hows = scan()
+    lines = build_index(hows)
+
+    if not lines:
+        block = f"{START}\n  # No hows found with how: frontmatter\n{END}"
+    else:
+        block = START + "\n" + "\n".join(lines) + "\n" + END
+
+    if args.write:
+        agents = Path("AGENTS.md")
+        content = agents.read_text()
+        fence_re = re.compile(
+            re.escape(START) + r".*?" + re.escape(END), re.DOTALL)
+        if fence_re.search(content):
+            content = fence_re.sub(block, content)
+        else:
+            marker = "## Current Project"
+            section = f"## Hows Index\n\n{block}\n\n---\n\n"
+            if marker in content:
+                content = content.replace(marker, section + marker, 1)
+            else:
+                content += "\n" + section
+        agents.write_text(content)
+        out = args.output_path or "AGENTS.md"
+        print(f"Hows index written to {out} ({len(lines)} hows)")
+    else:
+        out = args.output_path or "hows-index.md"
+        Path(out).write_text(block + "\n")
+        print(f"Hows index: {len(lines)} hows (dry output: {out})")
+        for l in lines:
+            print("  " + l)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+# Counts JSON Generator
+# Generates counts.json with corpus statistics
+# Generator CLI: prints by default, --write to write, --output-path for test path
+
+set -euo pipefail
+
+# Configuration
+CORPUS_DIRS=("docs/graph" "tools/meta" "tools/inital")
+
+# CLI flags
+WRITE_MODE=false
+OUTPUT_PATH=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --write)
+      WRITE_MODE=true
+      shift
+      ;;
+    --output-path)
+      OUTPUT_PATH="$2"
+      shift 2
+      ;;
+    --output-path=*)
+      OUTPUT_PATH="${1#*=}"
+      shift
+      ;;
+    --help|-h)
+      echo "Usage: $0 [--write] [--output-path <path>]"
+      echo "  --write           Write results to counts.json (default: print to stdout)"
+      echo "  --output-path     Path for test output (implies --write)"
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -n "$OUTPUT_PATH" ]]; then
+  WRITE_MODE=true
+fi
+
+# Collect all markdown files
+mapfile -t all_files < <(find "${CORPUS_DIRS[@]}" -name "*.md" -type f 2>/dev/null | sort)
+
+# Build statistics
+notes_total=${#all_files[@]}
+
+# Count by type
+declare -A by_type
+declare -A by_tag
+
+# Count links
+total_links=0
+checkable_links=0
+dangling_links=0
+
+# Build ID register for link checking; notes_total counts id-bearing notes
+# (files without frontmatter — e.g. tools/inital reference files — are not notes)
+declare -A id_map
+notes_total=0
+for file in "${all_files[@]}"; do
+  id_val=$(awk -v key="id" '
+    /^---$/ { fm++; if (fm >= 2) exit; next }
+    fm == 1 && $0 ~ "^" key ":" { 
+      sub("^" key ": *", "")
+      gsub(/^[" ]+|[" ]+$/, "")
+      print
+      exit
+    }
+  ' "$file")
+  if [[ -n "$id_val" ]]; then
+    id_map[$id_val]=1
+    notes_total=$((notes_total + 1))
+  fi
+done
+
+# Process each file
+for file in "${all_files[@]}"; do
+  # Extract type (first frontmatter block only)
+  type_val=$(awk -v key="type" '
+    /^---$/ { fm++; if (fm >= 2) exit; next }
+    fm == 1 && $0 ~ "^" key ":" { 
+      sub("^" key ": *", "")
+      gsub(/^[" ]+|[" ]+$/, "")
+      print
+      exit
+    }
+  ' "$file")
+  
+  if [[ -n "$type_val" ]]; then
+    by_type["$type_val"]=$((${by_type["$type_val"]:-0} + 1))
+  fi
+  
+  # Extract tags from the FIRST frontmatter block only (code-fence examples
+  # in note bodies are documentation, not data)
+  fm_block=$(awk '/^---$/{f++; if (f>=2) exit; next} f==1{print}' "$file")
+  in_tags=0
+  while IFS= read -r line; do
+    if [[ "$line" =~ ^tags: ]]; then
+      in_tags=1
+      # Check if inline array
+      if [[ "$line" =~ \[.*\] ]]; then
+        tags_content="${line#*[}"
+        tags_content="${tags_content%%]*}"
+        IFS=',' read -ra tags <<< "$tags_content"
+        for tag in "${tags[@]}"; do
+          tag=$(echo "$tag" | sed -E 's/^[" ]+|[" ]+$//g')
+          tag=$(echo "$tag" | sed -E 's/^#+//')
+          if [[ -n "$tag" ]]; then
+            by_tag["$tag"]=$((${by_tag["$tag"]:-0} + 1))
+          fi
+        done
+        in_tags=0
+      fi
+      continue
+    fi
+    if [[ $in_tags -eq 1 ]]; then
+      if [[ "$line" =~ ^[[:space:]]*-[[:space:]]* ]]; then
+        tag=$(echo "$line" | sed -E 's/^[[:space:]]*-[[:space:]]*[" ]*//')
+        tag=$(echo "$tag" | sed -E 's/[" ]*$//')
+        tag=$(echo "$tag" | sed -E 's/^#+//')
+        if [[ -n "$tag" ]]; then
+          by_tag["$tag"]=$((${by_tag["$tag"]:-0} + 1))
+        fi
+      else
+        in_tags=0
+      fi
+    fi
+  done <<< "$fm_block"
+  
+  # Count wiki links in this file (links may be path-qualified: [[docs/graph/<id>|...]]).
+  # ID-shaped links (YYMMDDHHMMSS-XXXX) are checkable; placeholder links in
+  # documentation examples ([[id]], [[nodes]]) are counted but not judged.
+  while IFS= read -r link; do
+    if [[ -n "$link" ]]; then
+      id_part="${link%%|*}"
+      id_part="${id_part##*/}"
+      total_links=$((total_links + 1))
+      if [[ "$id_part" =~ ^[0-9]{12}-[A-Z0-9]{4}$ ]]; then
+        checkable_links=$((checkable_links + 1))
+        if [[ -z "${id_map[$id_part]:-}" ]]; then
+          dangling_links=$((dangling_links + 1))
+        fi
+      fi
+    fi
+  done < <(grep -oE '\[\[([^]|]+)(\|[^]]+)?\]\]' "$file" 2>/dev/null | sed -E 's/\[\[([^]|]+)(\|[^]]+)?\]\]/\1/' || true)
+done
+
+# Generate JSON
+generated_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+# Escape a string for use as a JSON key (backslash and double quote)
+esc() { local s="$1"; s="${s//\\\\/\\\\\\\\}"; s="${s//\"/\\\"}"; printf '%s' "$s"; }
+
+# Build by_type JSON (single-line objects — valid JSON, no escape gymnastics)
+by_type_json=""
+first=1
+for type in "${!by_type[@]}"; do
+  if [[ $first -eq 1 ]]; then first=0; else by_type_json+=", "; fi
+  by_type_json+="\"$(esc "$type")\": ${by_type[$type]}"
+done
+
+# Build by_tag JSON
+by_tag_json=""
+first=1
+for tag in "${!by_tag[@]}"; do
+  if [[ $first -eq 1 ]]; then first=0; else by_tag_json+=", "; fi
+  by_tag_json+="\"$(esc "$tag")\": ${by_tag[$tag]}"
+done
+
+# Output JSON
+cat <<EOF
+{
+  "generated_at": "$generated_at",
+  "notes_total": $notes_total,
+  "by_type": {
+    $by_type_json
+  },
+  "by_tag": {
+    $by_tag_json
+  },
+  "links": {
+    "total": $total_links,
+    "checkable": $checkable_links,
+    "dangling": $dangling_links
+  }
+}
+EOF
+
+# Write to file if requested
+if [[ "$WRITE_MODE" == "true" ]]; then
+  out_file="${OUTPUT_PATH:-counts.json}"
+  {
+    cat <<EOF
+{
+  "generated_at": "$generated_at",
+  "notes_total": $notes_total,
+  "by_type": {
+    $by_type_json
+  },
+  "by_tag": {
+    $by_tag_json
+  },
+  "links": {
+    "total": $total_links,
+    "checkable": $checkable_links,
+    "dangling": $dangling_links
+  }
+}
+EOF
+  } > "$out_file"
+  echo "Results written to $out_file"
+fi

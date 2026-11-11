@@ -1,0 +1,47 @@
+#!/usr/bin/env python3
+import sys, re, argparse
+from datetime import datetime
+from pathlib import Path
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--session-id', required=True)
+parser.add_argument('--write', action="store_true")
+parser.add_argument('--output-path')
+args = parser.parse_args()
+
+session_file = Path("docs/graph") / f"{args.session_id}.md"
+if not session_file.exists():
+    print(f"ERROR: Session file not found: {session_file}", file=sys.stderr)
+    sys.exit(1)
+
+content = session_file.read_text()
+
+if 'type: "session"' not in content and 'type: session' not in content and 'type: "session-note"' not in content and 'type: session-note' not in content:
+    print("ERROR: Not a session type", file=sys.stderr)
+    sys.exit(1)
+
+match = re.search(r'^(---.*?---)', content, re.DOTALL)
+if not match:
+    print("ERROR: Invalid frontmatter", file=sys.stderr)
+    sys.exit(1)
+
+timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+
+if re.search(r'^session_started:', match.group(1), re.MULTILINE):
+    new_fm = re.sub(r'^session_started:.*$', f'session_started: "{timestamp}"', match.group(1), flags=re.MULTILINE)
+else:
+    lines = match.group(1).split('\n')
+    insert_idx = len(lines)
+    for i in range(len(lines) - 1, -1, -1):
+        stripped = lines[i].strip()
+        if stripped and not stripped.startswith('#'):
+            insert_idx = i + 1
+            break
+    lines.insert(insert_idx, f'session_started: "{timestamp}"')
+    new_fm = '\n'.join(lines)
+new_content = content[:match.start()] + new_fm + content[match.end():]
+
+with open(f"docs/graph/{args.session_id}.md", "w") as f:
+    f.write(new_content)
+
+print(f"Updated session_started to {timestamp}")

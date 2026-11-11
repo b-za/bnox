@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CORPUS_DIRS=("tools/meta" "tools/checks")
+WRITE_MODE=false
+OP=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --write) WRITE_MODE=true; shift ;;
+    --output-path) OP="$2"; shift 2 ;;
+    --output-path=*) OP="${1#*=}"; shift ;;
+    --help|-h) echo "Usage: $0 [--write] [--output-path <path>]"; exit 0 ;;
+    *) echo "Unknown: $1"; exit 1 ;;
+  esac
+done
+
+[[ -n "$OP" ]] && WRITE_MODE=true
+
+mapfile -t all_files < <(find -L "${CORPUS_DIRS[@]}" -name "*.md" -type f 2>/dev/null | sort)
+
+FAIL=0
+RESULTS=()
+
+add() {
+  RESULTS+=("$1|$2|$3")
+  if [[ "$1" == "FAIL" ]]; then FAIL=1; fi
+  return 0
+}
+
+get_fm() {
+  awk -v k="$2" '
+    /^---$/ { fm++; if (fm >= 2) exit; next }
+    fm == 1 && $0 ~ "^" k ":" { sub("^" k ": *", ""); gsub(/^[" ]+|[" ]+$/, ""); print; exit }
+  ' "$1"
+}
+
+get_fm_arr() {
+  awk -v k="$2" '
+    /^---$/ { fm++; if (fm >= 2) exit; next }
+    fm == 1 && $0 ~ "^" k ":" {
+      line=$0; sub("^" k ": *", "", line)
+      if (line ~ /^\[/) {
+        gsub(/^\[|\]$/, "", line)
+        n=split(line, parts, ",")
+        for (i=1; i<=n; i++) { gsub(/^[" ]+|[" ]+$/, "", parts[i]); if (parts[i] != "") print parts[i] }
+        exit
+      }
+      arr=1; next
+    }
+    arr && /^  - / { gsub(/^  - [" ]*|[" ]*$/, ""); print; next }
+    arr && !/^  - / { arr=0 }
+  ' "$1"
+}
+
+echo "=== Meta-Check Sync ==="
+
+# Check 1: Meta principles with checkable=true have implementations
+echo "=== Check 1: checkable=true has impls ==="
+for f in "${all_files[@]}"; do
+  if [[ "$f" == *"tools/meta"* ]]; then
+    ch=$(get_fm "$f" "checkable")
+    if [[ "$ch" == "true" ]]; then
+      impl_found=false
+      for cf in "${all_files[@]}"; do
+        if [[ "$cf" == *"tools/checks"* ]]; then
+          while read -r imp; do
+            if [[ -n "$imp" ]]; then
+              fid=$(get_fm "$f" "id")
+              fb=$(basename "$f" .md)
+              if [[ "$imp" == *"$fb"* ]] || [[ "$imp" == *"$fid"* ]]; then
+                impl_found=true
+                break
+              fi
+            fi
+          done < <(get_fm_arr "$cf" "implements")
+        fi
+        if [[ "$impl_found" == "true" ]]; then break; fi
+      done
+      if [[ "$impl_found" == "false" ]]; then
+        add "FAIL" "$f" "checkable=true but no check impl"
+      fi
+    fi
+  fi
+done
+
+# Check 2: Check notes have valid implements references
+echo "=== Check 2: check notes have valid impl refs ==="
+for f in "${all_files[@]}"; do
+  if [[ "$f" == *"tools/checks"* ]]; then
+    while read -r impl; do
+      if [[ -n "$impl" ]]; then
+        found=false
+        for mf in "${all_files[@]}"; do
+          if [[ "$mf" == *"tools/meta"* ]]; then
+            mid=$(get_fm "$mf" "id")
+            if [[ "$impl" == *"$mid"* ]] || [[ "$impl" == *"$(basename "$mf" .md)"* ]]; then
+              found=true
+              break
+            fi
+          fi
+        done
+        if [[ "$found" == "false" ]]; then
+          add "FAIL" "$f" "Check refs non-existent: $impl"
+        fi
+      fi
+    done < <(get_fm_arr "$f" "implements")
+  fi
+done
+
+# Check 3: Meta files with checkable concepts are explicit
+echo "=== Check 3: meta files with checkable concepts explicit ==="
+for f in "${all_files[@]}"; do
+  if [[ "$f" == *"tools/meta"* ]]; then
+    if grep -qi "checkable\|verif\|check" "$f"; then
+      ch=$(get_fm "$f" "checkable")
+      if [[ -z "$ch" ]]; then
+        add "WARN" "$f" "mentions checkable but no checkable: field"
+      fi
+    fi
+  fi
+done
+
+# Check 4: Check files have procedure field
+echo "=== Check 4: check files have procedure ==="
+for f in "${all_files[@]}"; do
+  if [[ "$f" == *"tools/checks"* ]]; then
+    p=$(get_fm "$f" "procedure")
+    if [[ -z "$p" ]]; then
+      add "FAIL" "$f" "Check missing procedure"
+    fi
+  fi
+done
+
+output_results() {
+  echo "=== Meta-Check Sync ==="
+  echo "Files: ${#all_files[@]}"
+  echo "Issues: ${#RESULTS[@]}"
+  echo ""
+  for st in FAIL WARN; do
+    c=0
+    for r in "${RESULTS[@]}"; do
+      rs="${r%%|*}"
+      if [[ "$rs" == "$st" ]]; then c=$((c+1)); fi
+    done
+    if [[ $c -gt 0 ]]; then
+      echo "=== $st ($c) ==="
+      for r in "${RESULTS[@]}"; do
+        rs="${r%%|*}"
+        rem="${r#*|}"
+        rf="${rem%%|*}"
+        rm="${rem#*|}"
+        if [[ "$rs" == "$st" ]]; then echo "  $rf: $rm"; fi
+      done
+      echo ""
+    fi
+  done
+  if [[ $FAIL -eq 0 ]]; then echo "PASS"; else echo "FAIL"; fi
+}
+
+if [[ "$WRITE_MODE" == "true" ]]; then
+  output_results > "${OP:-check-sync-results.txt}"
+  if [[ -n "$OP" ]]; then echo "Written to $OP"; else echo "Written to check-sync-results.txt"; fi
+else
+  output_results
+fi
+exit $FAIL

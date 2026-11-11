@@ -1,0 +1,131 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+WRITE_MODE=false
+OP=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --write) WRITE_MODE=true; shift ;;
+    --output-path) OP="$2"; shift 2 ;;
+    --output-path=*) OP="${1#*=}"; shift ;;
+    --help|-h) echo "Usage: $0 [--write] [--output-path <path>]"; exit 0 ;;
+    *) echo "Unknown: $1"; exit 1 ;;
+  esac
+done
+
+[[ -n "$OP" ]] && WRITE_MODE=true
+
+FAIL=0
+RESULTS=()
+
+add() {
+  RESULTS+=("$1|$2|$3")
+  if [[ "$1" == "FAIL" ]]; then FAIL=1; fi
+  return 0
+}
+
+BOOT_FILES=("AGENTS.md" "tools/meta/260829153015-EFGV.md")
+
+# Forbidden: convention-summary SECTIONS in boot prompt files. The decision
+# files ARE the conventions; boot prompts are addresses to them (see Boot Set
+# rule "never include convention summaries"). Patterns target section headings
+# so prose that quotes or teaches the rule is allowed.
+FORBIDDEN=(
+  "^#+[[:space:]]+(Quick Reference|Quick reference)"
+  "^#+[[:space:]]+(Conventions?|Key Conventions?)$"
+  "^#+[[:space:]]+Summary$"
+  "^#+[[:space:]]+Table"
+  "^#+.*(convention|Convention)[[:space:]]+(summary|Summar)"
+  "^#+.*[Dd]efinitions?$"
+  "^#+.*[Qq]uick[[:space:]]*[Rr]ef"
+)
+
+echo "=== Checking boot prompts ==="
+
+for file in "${BOOT_FILES[@]}"; do
+  [[ ! -f "$file" ]] && { add "FAIL" "$file" "Boot prompt file not found"; continue; }
+  echo "Checking $file..."
+
+  for pattern in "${FORBIDDEN[@]}"; do
+    if grep -qE "$pattern" "$file" 2>/dev/null; then
+      add "FAIL" "$file" "Forbidden pattern: $pattern"
+    fi
+  done
+
+  while IFS= read -r link; do
+    [[ -n "$link" ]] && {
+      id_part="${link%%|*}"
+      if [[ "$id_part" =~ ^[0-9]{12}-[A-Z0-9]{4}$ ]]; then
+        : # valid
+      elif [[ "$id_part" =~ [a-z] ]] && [[ ! "$id_part" =~ ^(id|target|nodes|plugins|extended-analysis|decision-id|job-id|session-id)$ ]]; then
+        add "WARN" "$file" "Suspicious link: [[${link}]] (expected YYMMDDHHMMSS-XXXX or known placeholder)"
+      fi
+    }
+  done < <(grep -oE '\[\[([^]|]+)(\|[^]]+)?\]\]' "$file" 2>/dev/null | sed -E 's/\[\[([^]|]+)(\|[^]]+)?\]\]/\1/' || true)
+
+  if ! grep -qE '^[0-9]+\.' "$file"; then
+    add "WARN" "$file" "No explicit reading order (numbered list) found"
+  fi
+done
+
+add() {
+  RESULTS+=("$1|$2|$3")
+  if [[ "$1" == "FAIL" ]]; then FAIL=1; fi
+  return 0
+}
+
+if [[ "$WRITE_MODE" == "true" ]]; then
+  out="${OP:-boot-prompt-check-results.txt}"
+  {
+    echo "=== Boot Prompt Check ==="
+    echo "Files checked: ${#BOOT_FILES[@]}"
+    echo "Total issues: ${#RESULTS[@]}"
+    echo ""
+    for st in FAIL WARN; do
+      c=0
+      for r in "${RESULTS[@]}"; do
+        rs="${r%%|*}"
+        if [[ "$rs" == "$st" ]]; then c=$((c+1)); fi
+      done
+      if [[ $c -gt 0 ]]; then
+        echo "=== $st ($c) ==="
+        for r in "${RESULTS[@]}"; do
+          rs="${r%%|*}"
+          rem="${r#*|}"
+          rf="${rem%%|*}"
+          rm="${rem#*|}"
+          if [[ "$rs" == "$st" ]]; then echo "  $rf: $rm"; fi
+        done
+        echo ""
+      fi
+    done
+    if [[ $FAIL -eq 0 ]]; then echo "PASS: All boot prompts valid"; else echo "FAIL: Boot prompt check failed"; fi
+  } > "${OP:-boot-prompt-check-results.txt}"
+  [[ -n "$OP" ]] && echo "Written to $OP" || echo "Written to boot-prompt-check-results.txt"
+else
+  echo "=== Boot Prompt Check ==="
+  echo "Files checked: ${#BOOT_FILES[@]}"
+  echo "Total issues: ${#RESULTS[@]}"
+  echo ""
+  for st in FAIL WARN; do
+    c=0
+    for r in "${RESULTS[@]}"; do
+      rs="${r%%|*}"
+      if [[ "$rs" == "$st" ]]; then c=$((c+1)); fi
+    done
+    if [[ $c -gt 0 ]]; then
+      echo "=== $st ($c) ==="
+      for r in "${RESULTS[@]}"; do
+        rs="${r%%|*}"
+        rem="${r#*|}"
+        rf="${rem%%|*}"
+        rm="${rem#*|}"
+      if [[ "$rs" == "$st" ]]; then echo "  $rf: $rm"; fi
+    done
+    echo ""
+  fi
+  done
+  if [[ $FAIL -eq 0 ]]; then echo "PASS: All boot prompts valid"; else echo "FAIL: Boot prompt check failed"; fi
+fi
+exit $FAIL

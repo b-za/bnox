@@ -1,0 +1,176 @@
+#!/usr/bin/env bash
+# Dead Text Check Script
+# Validates dead text markers: <!-- DEAD: superseded by [[id]] -->old<!-- /DEAD -->
+# Generator CLI: prints by default, --write to write, --output-path for test path
+
+set -euo pipefail
+
+# Configuration
+CORPUS_DIRS=("docs/graph" "tools/meta" "tools/inital")
+
+# CLI flags
+WRITE_MODE=false
+OUTPUT_PATH=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --write)
+      WRITE_MODE=true
+      shift
+      ;;
+    --output-path)
+      OUTPUT_PATH="$2"
+      shift 2
+      ;;
+    --output-path=*)
+      OUTPUT_PATH="${1#*=}"
+      shift
+      ;;
+    --help|-h)
+      echo "Usage: $0 [--write] [--output-path <path>]"
+      echo "  --write           Write results to output file (default: print to stdout)"
+      echo "  --output-path     Path for test output (implies --write)"
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -n "$OUTPUT_PATH" ]]; then
+  WRITE_MODE=true
+fi
+
+# Collect all markdown files
+mapfile -t all_files < <(find "${CORPUS_DIRS[@]}" -name "*.md" -type f 2>/dev/null | sort)
+
+# Build ID register
+declare -A id_map
+for file in "${all_files[@]}"; do
+  id_val=$(awk -v key="id" '
+    /^---$/ { in_fm=!in_fm; next }
+    in_fm && $0 ~ "^" key ":" { 
+      sub("^" key ": *", "")
+      gsub(/^[" ]+|[" ]+$/, "")
+      print
+      exit
+    }
+  ' "$file")
+  if [[ -n "$id_val" ]]; then
+    id_map[$id_val]="$file"
+  fi
+done
+
+FAIL=0
+RESULTS=()
+
+# Helper: add result
+add_result() {
+  local status="$1"
+  local file="$2"
+  local msg="$3"
+  RESULTS+=("$status|$file|$msg")
+  if [[ "$status" == "FAIL" ]]; then
+    FAIL=1
+  fi
+}
+
+# strip_code: remove fenced code blocks and inline code spans so that
+# documentation EXAMPLES of marker syntax are not checked as real markers
+strip_code() {
+  awk '
+    /^```/ { infence=!infence; next }
+    infence { next }
+    { gsub(/`[^`]*`/, ""); print }
+  ' "$1"
+}
+
+# Check each file for dead text markers
+echo "=== Checking dead text markers ==="
+for file in "${all_files[@]}"; do
+  # Find all DEAD markers with their content
+  # Pattern: <!-- DEAD: superseded by [[id]] -->...<!-- /DEAD -->
+  while IFS= read -r line; do
+    if [[ -n "$line" ]]; then
+      # Extract the referenced ID from the DEAD marker
+      if [[ "$line" =~ DEAD:[[:space:]]*superseded[[:space:]]*by[[:space:]]*\[\[([^]]+)\]\] ]]; then
+        ref_id="${BASH_REMATCH[1]}"
+        # Skip placeholder ids used in prose examples
+        if [[ ! "$ref_id" =~ ^[0-9]{12}-[A-Z0-9]{4}$ ]]; then
+          add_result "WARN" "$file" "Dead marker placeholder id: $ref_id"
+        # Check if referenced ID exists
+        elif [[ -z "${id_map[$ref_id]:-}" ]]; then
+          add_result "FAIL" "$file" "Dead marker references non-existent ID: $ref_id"
+        fi
+      elif [[ "$line" =~ DEAD: ]]; then
+        # DEAD marker but doesn't match expected format
+        add_result "WARN" "$file" "Dead marker format unexpected: $line"
+      fi
+    fi
+  done < <(strip_code "$file" | grep -oE '<!-- DEAD: superseded by \[\[[^]]+\]\] -->[^<]*<!-- /DEAD -->' 2>/dev/null || true)
+  
+  # Also check for unclosed or malformed DEAD markers
+  start_count=$(strip_code "$file" | grep -c '<!-- DEAD:' || true)
+  end_count=$(strip_code "$file" | grep -c '<!-- /DEAD -->' || true)
+  if [[ $start_count -ne $end_count ]]; then
+    add_result "FAIL" "$file" "Mismatched DEAD marker count (start: $start_count, end: $end_count)"
+  fi
+done
+
+# Output results
+output_summary() {
+  if [[ "$WRITE_MODE" == "true" ]]; then
+    local out_file="${OUTPUT_PATH:-dead-text-check-results.txt}"
+    output_results > "$out_file"
+    if [[ -n "$OUTPUT_PATH" ]]; then
+      echo "Results written to $OUTPUT_PATH"
+    else
+      echo "Results written to dead-text-check-results.txt"
+    fi
+  else
+    output_results
+  fi
+}
+
+output_results() {
+  echo "=== Dead Text Check Results ==="
+  echo "Files checked: ${#all_files[@]}"
+  echo "Total IDs in register: ${#id_map[@]}"
+  echo "Total issues: ${#RESULTS[@]}"
+  echo ""
+
+  for status in FAIL WARN; do
+    count=0
+    for result in "${RESULTS[@]}"; do
+      r_status="${result%%|*}"
+      if [[ "$r_status" == "$status" ]]; then
+        count=$((count+1))
+      fi
+    done
+    if [[ $count -gt 0 ]]; then
+      echo "=== $status ($count) ==="
+      for result in "${RESULTS[@]}"; do
+        r_status="${result%%|*}"
+        remainder="${result#*|}"
+        r_file="${remainder%%|*}"
+        r_msg="${remainder#*|}"
+        if [[ "$r_status" == "$status" ]]; then
+          echo "  $r_file: $r_msg"
+        fi
+      done
+      echo ""
+    fi
+  done
+
+  if [[ $FAIL -eq 0 ]]; then
+    echo "PASS: All dead text markers valid"
+  else
+    echo "FAIL: Dead text check failed"
+  fi
+}
+
+output_summary
+
+exit $FAIL

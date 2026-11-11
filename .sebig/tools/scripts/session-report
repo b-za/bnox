@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""Session Report Generator - Regenerates session-note generated sections"""
+
+import sys
+import re
+import argparse
+from datetime import datetime, timezone
+from pathlib import Path
+from collections import defaultdict
+
+def parse_frontmatter(content):
+    """Extract frontmatter as dict"""
+    parts = content.split('---', 2)
+    if len(parts) < 3:
+        return {}
+    fm_text = parts[1]
+    fm = {}
+    for line in fm_text.split('\n'):
+        match = re.match(r'^(\w+):\s*(.*)$', line.strip())
+        if match:
+            key, value = match.groups()
+            if value.startswith('['):
+                items = re.findall(r'"([^"]+)"', value)
+                if not items:
+                    items = re.findall(r"'([^']+)'", value)
+                fm[key] = items
+            else:
+                value = value.strip(' "\'')
+                fm[key] = value
+    return fm
+
+def parse_iso_timestamp(ts_str):
+    """Parse ISO timestamp to datetime"""
+    if not ts_str:
+        return None
+    try:
+        return datetime.fromisoformat(ts_str.replace('Z', '+00:00'))
+    except:
+        return None
+
+def get_type_order():
+    """Return display order for type grouping"""
+    return [
+        'decision-how', 'decision-corpus',
+        'alternative-how', 'alternative-corpus',
+        'trigger-how', 'trigger-corpus',
+        'finding-how', 'finding-corpus',
+        'question-how', 'question-corpus',
+        'spec',
+        'concept',
+        'narrative',
+        'contract',
+        'guide',
+        'check',
+        'runbook',
+        'todo',
+        'job',
+        'session-note',
+        'project',
+        'index',
+    ]
+
+def format_type_header(ftype):
+    """Format type as display header"""
+    headers = {
+        'decision-how': 'Decisions (Meta-procedure)',
+        'decision-corpus': 'Decisions (Subject-matter)',
+        'alternative-how': 'Alternatives (Meta-procedure)',
+        'alternative-corpus': 'Alternatives (Subject-matter)',
+        'trigger-how': 'Triggers (Meta-procedure)',
+        'trigger-corpus': 'Triggers (Subject-matter)',
+        'finding-how': 'Findings (Meta-procedure)',
+        'finding-corpus': 'Findings (Subject-matter)',
+        'question-how': 'Questions (Meta-procedure)',
+        'question-corpus': 'Questions (Subject-matter)',
+        'spec': 'Specs',
+        'concept': 'Concepts',
+        'narrative': 'Narratives',
+        'contract': 'Contracts',
+        'guide': 'Guides',
+        'check': 'Checks',
+        'runbook': 'Runbooks',
+        'todo': 'Todos',
+        'job': 'Jobs',
+        'session-note': 'Sessions',
+        'project': 'Projects',
+        'index': 'Indexes',
+    }
+    return headers.get(ftype, ftype.title() + 's')
+
+def replace_fence(body, fence_name, new_content, section_title):
+    pattern = rf'(<!-- GENERATED:START:{fence_name} -->).*?(<!-- GENERATED:END:{fence_name} -->)'
+    replacement = f'<!-- GENERATED:START:{fence_name} -->\n{new_content}\n<!-- GENERATED:END:{fence_name} -->'
+    if re.search(pattern, body, re.DOTALL):
+        return re.sub(pattern, replacement, body, flags=re.DOTALL)
+    else:
+        section_pattern = rf'(## {section_title}\n)(.*?)(?=\n## |\Z)'
+        match = re.search(section_pattern, body, re.DOTALL)
+        if match:
+            return body[:match.end(1)] + new_content + '\n\n' + body[match.end(1):]
+        return body
+
+def main():
+    parser = argparse.ArgumentParser(description='Generate session report sections')
+    parser.add_argument('--session-id', required=True, help='Session ID (e.g., 260902112225-EGMC)')
+    parser.add_argument('--write', action='store_true', help='Write back to session file')
+    parser.add_argument('--output-path', help='Write output to custom path (for testing)')
+    args = parser.parse_args()
+
+    session_file = Path("docs/graph") / f"{args.session_id}.md"
+    if not session_file.exists():
+        print(f"ERROR: Session file not found: {session_file}", file=sys.stderr)
+        sys.exit(1)
+
+    content = session_file.read_text()
+    fm = parse_frontmatter(content)
+
+    if fm.get('type') != 'session-note':
+        print(f"ERROR: Not a session-note type: {fm.get('type')}", file=sys.stderr)
+        sys.exit(1)
+
+    session_started = fm.get('session_started')
+    session_ended = fm.get('session_ended')
+
+    start_dt = parse_iso_timestamp(session_started)
+    end_dt = parse_iso_timestamp(session_ended)
+
+    if not start_dt:
+        print("WARNING: session_started not set, using file mtime as fallback")
+        start_dt = datetime.fromtimestamp(session_file.stat().st_mtime, tz=timezone.utc)
+
+    if not end_dt:
+        end_dt = datetime.now(timezone.utc)
+
+    corpus_dirs = ["docs/graph", "tools/meta", "tools/scripts", "tools/checks"]
+    created_files = defaultdict(list)
+    edited_files = defaultdict(list)
+
+    for corpus_dir in corpus_dirs:
+        for f in sorted(Path(corpus_dir).glob("*.md")):
+            try:
+                fc = f.read_text()
+                file_fm = parse_frontmatter(fc)
+
+                ftype = file_fm.get('type')
+                if not ftype:
+                    continue
+
+                fid = f.stem
+                alias = fid
+                alias_match = file_fm.get('alias')
+                if alias_match and isinstance(alias_match, list) and alias_match:
+                    alias = alias_match[0]
+
+                file_session = file_fm.get('session')
+                file_started = file_fm.get('session_started')
+                file_date_created = file_fm.get('date_created')
+
+                created = False
+                if file_session == args.session_id:
+                    created = True
+                elif file_started:
+                    fs_dt = parse_iso_timestamp(file_started)
+                    if fs_dt and start_dt <= fs_dt <= end_dt:
+                        created = True
+                elif file_date_created:
+                    fc_dt = parse_iso_timestamp(file_date_created)
+                    if fc_dt and start_dt <= fc_dt <= end_dt:
+                        created = True
+
+                file_updated = file_fm.get('date_updated')
+                edited = False
+                if file_updated:
+                    fu_dt = parse_iso_timestamp(file_updated)
+                    if fu_dt and start_dt <= fu_dt <= end_dt:
+                        edited = True
+
+                if created:
+                    created_files[ftype].append((fid, alias))
+                if edited:
+                    edited_files[ftype].append((fid, alias))
+
+            except Exception:
+                pass
+
+    type_order = get_type_order()
+
+    def generate_section(files_dict):
+        lines = []
+        for ftype in type_order:
+            if ftype in files_dict and files_dict[ftype]:
+                lines.append(f"### {format_type_header(ftype)}")
+                for fid, alias in sorted(files_dict[ftype]):
+                    lines.append(f"- [[{fid}|{alias}]]")
+                lines.append("")
+        return '\n'.join(lines).rstrip()
+
+    created_md = generate_section(created_files)
+    edited_md = generate_section(edited_files)
+
+    if not created_md:
+        created_md = "  # No files created in this session"
+    if not edited_md:
+        edited_md = "  # No files edited in this session"
+
+    new_content = content
+    new_content = replace_fence(new_content, "session-files-created", created_md, "Files Created")
+    new_content = replace_fence(new_content, "session-files-edited", edited_md, "Files Edited")
+
+    if args.write:
+        if args.output_path:
+            Path(args.output_path).write_text(new_content)
+        else:
+            session_file.write_text(new_content)
+        print(f"Updated session report for {args.session_id}")
+        print(f"  Files created: {sum(len(v) for v in created_files.values())}")
+        print(f"  Files edited: {sum(len(v) for v in edited_files.values())}")
+    else:
+        print(new_content)
+
+if __name__ == '__main__':
+    main()

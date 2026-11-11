@@ -1,0 +1,217 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CORPUS_DIRS=("docs/graph" "tools/meta" "tools/checks")
+VALID_TYPES=("spec" "concept" "narrative" "guide" "protocol" "check" "alternative-how" "alternative-corpus" "trigger-how" "trigger-corpus" "decision-how" "decision-corpus" "todo" "question-how" "question-corpus" "finding-how" "finding-corpus" "runbook" "contract" "index" "job" "session" "project" "session-note")
+REQUIRED=("id" "type" "alias" "tags")
+DECISION_SECTIONS=("Decision" "Alternatives Considered" "Losing Readings" "Glossary Implications" "Consequences Elsewhere" "Review Triggers" "Related Decisions" "What This Does Not Do")
+
+WRITE_MODE=false
+OUTPUT_PATH=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --write) WRITE_MODE=true; shift ;;
+    --output-path) OUTPUT_PATH="$2"; shift 2 ;;
+    --output-path=*) OUTPUT_PATH="${1#*=}"; shift ;;
+    --help|-h) echo "Usage: $0 [--write] [--output-path <path>]"; exit 0 ;;
+    *) echo "Unknown: $1"; exit 1 ;;
+  esac
+done
+
+[[ -n "$OUTPUT_PATH" ]] && WRITE_MODE=true
+
+mapfile -t all_files < <(find -L "${CORPUS_DIRS[@]}" -name "*.md" -type f 2>/dev/null | sort)
+
+FAIL=0
+RESULTS=()
+
+add_result() {
+  RESULTS+=("$1|$2|$3")
+  if [[ "$1" == "FAIL" ]]; then FAIL=1; fi
+  return 0
+}
+
+get_fm_value() {
+  local file="$1" key="$2"
+  awk -v k="$key" '
+    /^---$/ { fm++; if (fm >= 2) exit; next }
+    fm == 1 && $0 ~ "^" k ":" { sub("^" k ": *", ""); gsub(/^[" ]+|[" ]+$/, ""); print; exit }
+  ' "$file"
+}
+
+get_fm_array() {
+  local file="$1" key="$2"
+  awk -v k="$key" '
+    /^---$/ { fm++; if (fm >= 2) exit; next }
+    fm == 1 && $0 ~ "^" k ":" {
+      line=$0; sub("^" k ": *", "", line)
+      if (line ~ /^\[/) {
+        gsub(/^\[|\]$/, "", line)
+        n=split(line, parts, ",")
+        for (i=1; i<=n; i++) { gsub(/^[" ]+|[" ]+$/, "", parts[i]); if (parts[i] != "") print parts[i] }
+        exit
+      }
+      arr=1; next
+    }
+    arr && /^  - / { gsub(/^  - [" ]*|[" ]*$/, ""); print; next }
+    arr && !/^  - / { arr=0 }
+  ' "$file"
+}
+
+declare -A NONCORPUS
+
+echo "=== Check 0: Corpus shape ==="
+for f in "${all_files[@]}"; do
+  first=$(head -1 "$f")
+  if [[ "$first" != "---" ]]; then
+    add_result "FAIL" "$f" "Non-corpus file (no frontmatter) in corpus directory — add corpus frontmatter per tools/meta/260825144541-DFTS or move it out"
+    NONCORPUS["$f"]=1
+  fi
+done
+
+echo "=== Check 1: Frontmatter ==="
+for f in "${all_files[@]}"; do
+  [[ -n "${NONCORPUS[$f]:-}" ]] && continue
+  for field in "${REQUIRED[@]}"; do
+    if [[ "$field" == "alias" || "$field" == "tags" ]]; then
+      c=0
+      while read -r l; do
+        if [[ -n "$l" ]]; then c=$((c+1)); fi
+      done < <(get_fm_array "$f" "$field")
+      if [[ $c -eq 0 ]]; then add_result "FAIL" "$f" "Missing $field"; fi
+    else
+      v=$(get_fm_value "$f" "$field")
+      [[ -z "$v" ]] && { add_result "FAIL" "$f" "Missing $field"; }
+    fi
+  done
+done
+
+echo "=== Check 2: Valid types ==="
+for f in "${all_files[@]}"; do
+  [[ -n "${NONCORPUS[$f]:-}" ]] && continue
+  t=$(get_fm_value "$f" "type")
+  [[ -n "$t" ]] && {
+    ok=false
+    for vt in "${VALID_TYPES[@]}"; do [[ "$t" == "$vt" ]] && ok=true && break; done
+    [[ "$ok" == "false" ]] && { add_result "FAIL" "$f" "Invalid type: $t"; }
+  }
+done
+
+echo "=== Check 3: alias present ==="
+for f in "${all_files[@]}"; do
+  [[ -n "${NONCORPUS[$f]:-}" ]] && continue
+  c=0
+  while read -r l; do
+    if [[ -n "$l" ]]; then c=$((c+1)); fi
+  done < <(get_fm_array "$f" "alias")
+  if [[ $c -eq 0 ]]; then add_result "FAIL" "$f" "alias empty"; fi
+done
+
+echo "=== Check 4: tags no # ==="
+for f in "${all_files[@]}"; do
+  [[ -n "${NONCORPUS[$f]:-}" ]] && continue
+  while read -r tag; do
+    [[ -n "$tag" && "$tag" =~ ^# ]] && { add_result "FAIL" "$f" "Tag has #: $tag"; }
+  done < <(get_fm_array "$f" "tags")
+done
+
+echo "=== Check 5: Wiki links ==="
+for f in "${all_files[@]}"; do
+  [[ -n "${NONCORPUS[$f]:-}" ]] && continue
+  while read -r link; do
+    [[ -n "$link" ]] && {
+      id="${link%%|*}"
+      [[ ! "$id" =~ ^[0-9]{12}-[A-Z0-9]{4}$ ]] && [[ "$id" =~ [a-z] ]] && [[ ${#id} -lt 10 ]] && add_result "WARN" "$f" "Suspicious link: [[${link}]]"
+    }
+  done < <(grep -oE '\[\[([^]|]+)(\|[^]]+)?\]\]' "$f" 2>/dev/null | sed -E 's/\[\[([^]|]+)(\|[^]]+)?\]\]/\1/' || true)
+done
+
+echo "=== Check 6: ID format ==="
+for f in "${all_files[@]}"; do
+  [[ -n "${NONCORPUS[$f]:-}" ]] && continue
+  id=$(get_fm_value "$f" "id")
+  [[ -n "$id" ]] && {
+    [[ ! "$id" =~ ^[0-9]{12}-[A-Z0-9]{4}$ ]] && { add_result "FAIL" "$f" "Bad ID: $id"; }
+    fn=$(basename "$f" .md)
+    [[ "$id" != "$fn" ]] && { add_result "FAIL" "$f" "ID!=filename: $id vs $fn"; }
+  }
+done
+
+echo "=== Check 7: No duplicate IDs ==="
+declare -A id_map
+for f in "${all_files[@]}"; do
+  [[ -n "${NONCORPUS[$f]:-}" ]] && continue
+  id=$(get_fm_value "$f" "id")
+  [[ -n "$id" ]] && {
+    [[ -n "${id_map[$id]:-}" ]] && { add_result "FAIL" "$f" "Duplicate ID: $id (in ${id_map[$id]})"; } || id_map[$id]="$f"
+  }
+done
+
+echo "=== Check 8: Decision sections ==="
+for f in "${all_files[@]}"; do
+  [[ -n "${NONCORPUS[$f]:-}" ]] && continue
+  t=$(get_fm_value "$f" "type")
+  [[ "$t" == "decision-how" || "$t" == "decision-corpus" ]] && {
+    for s in "Decision" "Alternatives Considered" "Losing Readings" "Glossary Implications" "Consequences Elsewhere" "Review Triggers" "Related Decisions" "What This Does Not Do"; do
+      grep -qE "^## $s$" "$f" || { add_result "FAIL" "$f" "Missing section: $s"; }
+    done
+  }
+done
+
+echo "=== Check 9: Index fences ==="
+for f in "${all_files[@]}"; do
+  [[ -n "${NONCORPUS[$f]:-}" ]] && continue
+  t=$(get_fm_value "$f" "type")
+  [[ "$t" == "index" ]] && {
+    s=$(grep -c '<!-- GENERATED:START:' "$f" || true)
+    e=$(grep -c '<!-- GENERATED:END:' "$f" || true)
+    [[ $s -eq 0 || $e -eq 0 ]] && { add_result "FAIL" "$f" "Missing GENERATED fences: $s/$e"; }
+    [[ $s -ne $e ]] && { add_result "FAIL" "$f" "Mismatched fences: $s/$e"; }
+  }
+done
+
+output_summary() {
+  if [[ "$WRITE_MODE" == "true" ]]; then
+    local out="${OUTPUT_PATH:-spec-validate-results.txt}"
+    output_results > "$out"
+    [[ -n "$OUTPUT_PATH" ]] && echo "Written to $OUTPUT_PATH" || echo "Written to spec-validate-results.txt"
+  else
+    output_results
+  fi
+}
+
+add_result() {
+  RESULTS+=("$1|$2|$3")
+  if [[ "$1" == "FAIL" ]]; then FAIL=1; fi
+  return 0
+}
+
+output_results() {
+  echo "=== Spec Validation ==="
+  echo "Files: ${#all_files[@]}"
+  echo "Issues: ${#RESULTS[@]}"
+  echo ""
+  for st in FAIL WARN; do
+    c=0
+    for r in "${RESULTS[@]}"; do
+      rs="${r%%|*}"
+      if [[ "$rs" == "$st" ]]; then c=$((c+1)); fi
+    done
+    if [[ $c -gt 0 ]]; then
+      echo "=== $st ($c) ==="
+      for r in "${RESULTS[@]}"; do
+        rs="${r%%|*}"
+        rem="${r#*|}"
+        rf="${rem%%|*}"
+        rm="${rem#*|}"
+        if [[ "$rs" == "$st" ]]; then echo "  $rf: $rm"; fi
+      done
+      echo ""
+    fi
+  done
+  if [[ $FAIL -eq 0 ]]; then echo "PASS"; else echo "FAIL"; fi
+}
+
+output_summary
+exit $FAIL

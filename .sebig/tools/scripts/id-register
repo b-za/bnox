@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# ID Register Script
+# Enumerates all note IDs from the corpus (grep '^id:' equivalent)
+# Generator CLI: prints by default, --write to write, --output-path for test path
+
+set -euo pipefail
+
+# Configuration
+CORPUS_DIRS=("docs/graph" "tools/meta" "tools/inital")
+
+# CLI flags
+WRITE_MODE=false
+OUTPUT_PATH=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --write)
+      WRITE_MODE=true
+      shift
+      ;;
+    --output-path)
+      OUTPUT_PATH="$2"
+      shift 2
+      ;;
+    --output-path=*)
+      OUTPUT_PATH="${1#*=}"
+      shift
+      ;;
+    --help|-h)
+      echo "Usage: $0 [--write] [--output-path <path>] [--format <json|text|csv>]"
+      echo "  --write           Write results to output file (default: print to stdout)"
+      echo "  --output-path     Path for test output (implies --write)"
+      echo "  --format          Output format: json, text, csv (default: text)"
+      exit 0
+      ;;
+    --format)
+      FORMAT="$2"
+      shift 2
+      ;;
+    --format=*)
+      FORMAT="${1#*=}"
+      shift
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -n "$OUTPUT_PATH" ]]; then
+  WRITE_MODE=true
+fi
+
+FORMAT="${FORMAT:-text}"
+
+# Collect all markdown files
+mapfile -t all_files < <(find "${CORPUS_DIRS[@]}" -name "*.md" -type f 2>/dev/null | sort)
+
+# Build register
+declare -A id_map
+declare -A type_map
+declare -A title_map
+declare -A alias_map
+declare -A file_map
+
+for file in "${all_files[@]}"; do
+  # Extract frontmatter fields
+  id_val=$(awk -v key="id" '
+    /^---$/ { in_fm=!in_fm; next }
+    in_fm && $0 ~ "^" key ":" { 
+      sub("^" key ": *", "")
+      gsub(/^[" ]+|[" ]+$/, "")
+      print
+      exit
+    }
+  ' "$file")
+  
+  if [[ -n "$id_val" ]]; then
+    type_val=$(awk -v key="type" '
+      /^---$/ { in_fm=!in_fm; next }
+      in_fm && $0 ~ "^" key ":" { 
+        sub("^" key ": *", "")
+        gsub(/^[" ]+|[" ]+$/, "")
+        print
+        exit
+      }
+    ' "$file")
+    
+    title_val=$(awk -v key="title" '
+      /^---$/ { in_fm=!in_fm; next }
+      in_fm && $0 ~ "^" key ":" { 
+        sub("^" key ": *", "")
+        gsub(/^[" ]+|[" ]+$/, "")
+        print
+        exit
+      }
+    ' "$file")
+    
+    # Extract aliases as comma-separated
+    aliases=$(awk -v key="alias" '
+      /^---$/ { in_fm=!in_fm; next }
+      in_fm && $0 ~ "^" key ":" { in_array=1; next }
+      in_array && /^  - / { 
+        gsub(/^  - [" ]*|[" ]*$/, "")
+        if (aliases == "") aliases = $0; else aliases = aliases ", " $0
+        next
+      }
+      in_array && !/^  - / { in_array=0 }
+      END { if (aliases != "") print aliases }
+    ' "$file")
+    
+    id_map[$id_val]=1
+    type_map[$id_val]="${type_val:-unknown}"
+    title_map[$id_val]="${title_val:-}"
+    alias_map[$id_val]="${aliases:-}"
+    file_map[$id_val]="$file"
+  fi
+done
+
+# Sort IDs
+IFS=$'\n' sorted_ids=($(printf '%s\n' "${!id_map[@]}" | sort))
+unset IFS
+
+# Output
+output_results() {
+  case "$FORMAT" in
+    json)
+      echo "{"
+      echo "  \"generated_at\": \"$(date -u +%Y-%m-%dT%H:%M:%SZ)\","
+      echo "  \"total\": ${#sorted_ids[@]},"
+      echo "  \"notes\": ["
+      for i in "${!sorted_ids[@]}"; do
+        id="${sorted_ids[i]}"
+        comma=""
+        [[ $i -lt $((${#sorted_ids[@]}-1)) ]] && comma=","
+        printf '    {"id": "%s", "type": "%s", "title": "%s", "aliases": "%s", "file": "%s"}%s\n' \
+          "$id" "${type_map[$id]}" "${title_map[$id]}" "${alias_map[$id]}" "${file_map[$id]}" "$comma"
+      done
+      echo "  ]"
+      echo "}"
+      ;;
+    csv)
+      echo "id,type,title,aliases,file"
+      for id in "${sorted_ids[@]}"; do
+        printf '%s,%s,"%s","%s",%s\n' \
+          "$id" "${type_map[$id]}" "${title_map[$id]}" "${alias_map[$id]}" "${file_map[$id]}"
+      done
+      ;;
+    text|*)
+      echo "=== ID Register ==="
+      echo "Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+      echo "Total notes: ${#sorted_ids[@]}"
+      echo ""
+      for id in "${sorted_ids[@]}"; do
+        printf "%s  [%s]  %s\n" "$id" "${type_map[$id]}" "${title_map[$id]}"
+        if [[ -n "${alias_map[$id]}" ]]; then
+          echo "    aliases: ${alias_map[$id]}"
+        fi
+        echo "    file: ${file_map[$id]}"
+        echo ""
+      done
+      ;;
+  esac
+}
+
+output_summary() {
+  if [[ "$WRITE_MODE" == "true" ]]; then
+    local out_file="${OUTPUT_PATH:-id-register-results.txt}"
+    output_results > "$out_file"
+    if [[ -n "$OUTPUT_PATH" ]]; then
+      echo "Results written to $OUTPUT_PATH"
+    else
+      echo "Results written to id-register-results.txt"
+    fi
+  else
+    output_results
+  fi
+}
+
+output_summary
+
+exit 0

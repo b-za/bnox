@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CORPUS_DIRS=("docs/graph" "tools/meta" "tools/checks")
+
+WRITE_MODE=false
+OUTPUT_PATH=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --write) WRITE_MODE=true; shift ;;
+    --output-path) OUTPUT_PATH="$2"; shift 2 ;;
+    --output-path=*) OUTPUT_PATH="${1#*=}"; shift ;;
+    --help|-h) echo "Usage: $0 [--write] [--output-path <path>]"; exit 0 ;;
+    *) echo "Unknown: $1"; exit 1 ;;
+  esac
+done
+
+[[ -n "$OUTPUT_PATH" ]] && WRITE_MODE=true
+
+mapfile -t all_files < <(find -L "${CORPUS_DIRS[@]}" -name "*.md" -type f 2>/dev/null | sort)
+
+# Consumer layout (.sebig/ immutable base + symlinked tools): shipped tools/
+# content is pre-validated in the source repo; methodology guides legitimately
+# reference source-corpus notes that are not distributed. Validate links in the
+# consumer's own corpus only.
+check_files=("${all_files[@]}")
+if [[ -d .sebig && -L tools/scripts ]]; then
+  mapfile -t check_files < <(find -L docs -name "*.md" -type f 2>/dev/null | sort)
+fi
+
+declare -A id_map
+for file in "${all_files[@]}"; do
+  id_val=$(awk -v key="id" '
+    /^---$/ { in_fm=!in_fm; next }
+    in_fm && $0 ~ "^" key ":" { sub("^" key ": *", ""); gsub(/^[" ]+|[" ]+$/, ""); print; exit }
+  ' "$file")
+  [[ -n "$id_val" ]] && id_map[$id_val]="$file"
+done
+
+FAIL=0
+RESULTS=()
+
+add_result() {
+  RESULTS+=("$1|$2|$3")
+  if [[ "$1" == "FAIL" ]]; then FAIL=1; fi
+  return 0
+}
+
+echo "=== Checking wiki links ==="
+for file in "${check_files[@]}"; do
+  while IFS= read -r link; do
+    [[ -n "$link" ]] && {
+      path_id="${link%%|*}"
+      id_part="${path_id##*/}"
+      [[ ! "$id_part" =~ ^[0-9]{12}-[A-Z0-9]{4}$ ]] && continue
+      target_file="${id_map[$id_part]:-}"
+      [[ -z "$target_file" ]] && { add_result "FAIL" "$file" "Dangling wiki link: [[${link}]] — no note with id: $id_part"; } || {
+        expected_path="${target_file%.md}"
+        [[ "$path_id" != "$expected_path" ]] && { add_result "FAIL" "$file" "Wiki link path mismatch: [[${link}]] — expected path: $expected_path"; }
+      }
+    }
+  done < <(grep -oE '\[\[([^]|]+)(\|[^]]+)?\]\]' "$file" 2>/dev/null | sed -E 's/\[\[([^]|]+)(\|[^]]+)?\]\]/\1/' || true)
+done
+
+output_summary() {
+  if [[ "$WRITE_MODE" == "true" ]]; then
+    local out="${OUTPUT_PATH:-link-check-results.txt}"
+    output_results > "$out"
+    [[ -n "$OUTPUT_PATH" ]] && echo "Written to $OUTPUT_PATH" || echo "Written to link-check-results.txt"
+  else
+    output_results
+  fi
+}
+
+output_results() {
+  echo "=== Link Check Results ==="
+  echo "Files checked: ${#all_files[@]}"
+  echo "Total IDs in register: ${#id_map[@]}"
+  echo "Total issues: ${#RESULTS[@]}"
+  echo ""
+  for status in FAIL WARN; do
+    count=0
+    for result in "${RESULTS[@]}"; do
+      r_status="${result%%|*}"
+      if [[ "$r_status" == "$status" ]]; then count=$((count+1)); fi
+    done
+    if [[ $count -gt 0 ]]; then
+      echo "=== $status ($count) ==="
+      for result in "${RESULTS[@]}"; do
+        r_status="${result%%|*}"
+        remainder="${result#*|}"
+        r_file="${remainder%%|*}"
+        r_msg="${remainder#*|}"
+        if [[ "$r_status" == "$status" ]]; then echo "  $r_file: $r_msg"; fi
+      done
+      echo ""
+    fi
+  done
+  if [[ $FAIL -eq 0 ]]; then echo "PASS: All wiki links resolve"; else echo "FAIL: Link check failed"; fi
+}
+
+output_summary
+exit $FAIL

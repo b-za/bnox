@@ -1,0 +1,122 @@
+#!/usr/bin/env python3
+"""Project Index - Regenerates project job/session/decision lists in GENERATED fences"""
+
+import sys
+import re
+import argparse
+from datetime import datetime
+from pathlib import Path
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--project', required=True)
+    parser.add_argument('--write', action='store_true')
+    parser.add_argument('--output-path')
+    args = parser.parse_args()
+
+    corpus_dir = Path("docs/graph")
+    project_file = corpus_dir / f"{args.project}.md"
+    
+    if not project_file.exists():
+        print(f"ERROR: Project file not found: {project_file}", file=sys.stderr)
+        sys.exit(1)
+
+    content = project_file.read_text()
+
+    if 'type: "project"' not in content and 'type: project' not in content:
+        print("ERROR: Not a project type", file=sys.stderr)
+        sys.exit(1)
+
+    # Scan corpus for jobs, sessions, decisions with this project
+    jobs = []
+    sessions = []
+    decisions = []
+
+    for f in sorted(corpus_dir.glob("*.md")):
+        if f == project_file:
+            continue
+        try:
+            fc = f.read_text()
+            if not fc.lstrip().startswith('---'):
+                continue
+            parts = fc.split('---', 2)
+            if len(parts) < 3:
+                continue
+            fm = parts[1]
+            
+            # Check project field
+            project_match = re.search(rf'^project:\s*["\']?{re.escape(args.project)}["\']?', fm, re.MULTILINE)
+            if not project_match:
+                continue
+            
+            # Get type
+            type_match = re.search(r'^type:\s*["\']?([^"\']+)["\']?', fm, re.MULTILINE)
+            if not type_match:
+                continue
+            ftype = type_match.group(1)
+            
+            # Get alias for display
+            alias = f.stem
+            alias_match = re.search(r'^alias:\s*\[([^\]]+)\]', fm, re.MULTILINE)
+            if alias_match:
+                alias = alias_match.group(1).split(',')[0].strip().strip(' "\'')
+            
+            f_id = f.stem
+            
+            if ftype == "job":
+                status_match = re.search(r'(open|in-progress|done|blocked)', fm)
+                status = status_match.group(1) if status_match else "open"
+                jobs.append((f_id, alias, status))
+            elif ftype in ("session", "session-note"):
+                status_match = re.search(r'(planned|active|completed)', fm)
+                status = status_match.group(1) if status_match else "planned"
+                sessions.append((f_id, alias, status))
+            elif ftype in ("decision", "adr", "decision-how", "decision-corpus"):
+                decisions.append((f_id, alias))
+        except:
+            pass
+
+    # Build lists
+    def format_list(items, prefix=""):
+        if not items:
+            return f"  # No {prefix.lower()}s linked to this project yet"
+        lines = []
+        for item in items:
+            if len(item) == 3:
+                lines.append(f"  - [[{corpus_dir}/{item[0]}|{item[1]}]]  # {item[2]}")
+            else:
+                lines.append(f"  - [[{corpus_dir}/{item[0]}|{item[1]}]]")
+        return '\n'.join(lines)
+
+    jobs_md = format_list(jobs, "job")
+    sessions_md = format_list(sessions, "session")
+    decisions_md = format_list(decisions, "decision")
+
+    # Rebuild body with GENERATED fences
+    def replace_generated_section(body, fence_name, new_content):
+        pattern = rf'(<!-- GENERATED:START:{fence_name} -->).*?(<!-- GENERATED:END:{fence_name} -->)'
+        replacement = f'<!-- GENERATED:START:{fence_name} -->\n{new_content}\n<!-- GENERATED:END:{fence_name} -->'
+        if re.search(pattern, body, re.DOTALL):
+            return re.sub(pattern, replacement, body, flags=re.DOTALL)
+        else:
+            return body + f'\n\n<!-- GENERATED:START:{fence_name} -->\n{new_content}\n<!-- GENERATED:END:{fence_name} -->'
+
+    new_body = content
+    new_body = replace_generated_section(new_body, "project-jobs", jobs_md)
+    new_body = replace_generated_section(new_body, "project-sessions", sessions_md)
+    new_body = replace_generated_section(new_body, "project-decisions", decisions_md)
+
+    if args.write:
+        if args.output_path:
+            Path(args.output_path).write_text(new_body)
+        else:
+            project_file.write_text(new_body)
+        print(f"Regenerated project index for {args.project}")
+        print(f"  Jobs: {len(jobs)}")
+        print(f"  Sessions: {len(sessions)}")
+        print(f"  Decisions: {len(decisions)}")
+    else:
+        print(new_body)
+
+if __name__ == '__main__':
+    main()

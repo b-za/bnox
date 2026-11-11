@@ -1,0 +1,255 @@
+#!/usr/bin/env bash
+# Generated Fence Check Script
+# Validates index files have proper GENERATED fences with unique IDs
+# Generator CLI: prints by default, --write to write, --output-path for test path
+
+set -euo pipefail
+
+# Configuration
+CORPUS_DIRS=("docs/graph" "tools/meta" "tools/inital")
+
+# CLI flags
+WRITE_MODE=false
+OUTPUT_PATH=""
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --write)
+      WRITE_MODE=true
+      shift
+      ;;
+    --output-path)
+      OUTPUT_PATH="$2"
+      shift 2
+      ;;
+    --output-path=*)
+      OUTPUT_PATH="${1#*=}"
+      shift
+      ;;
+    --help|-h)
+      echo "Usage: $0 [--write] [--output-path <path>]"
+      echo "  --write           Write results to output file (default: print to stdout)"
+      echo "  --output-path     Path for test output (implies --write)"
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      exit 1
+      ;;
+  esac
+done
+
+if [[ -n "$OUTPUT_PATH" ]]; then
+  WRITE_MODE=true
+fi
+
+# Collect all markdown files
+mapfile -t all_files < <(find "${CORPUS_DIRS[@]}" -name "*.md" -type f 2>/dev/null | sort)
+
+FAIL=0
+RESULTS=()
+
+# Helper: add result
+add_result() {
+  local status="$1"
+  local file="$2"
+  local msg="$3"
+  RESULTS+=("$status|$file|$msg")
+  if [[ "$status" == "FAIL" ]]; then
+    FAIL=1
+  fi
+}
+
+# Check each file for GENERATED fences
+echo "=== Checking GENERATED fences ==="
+declare -A global_fence_ids
+
+for file in "${all_files[@]}"; do
+  type_val=$(awk -v key="type" '
+    /^---$/ { in_fm=!in_fm; next }
+    in_fm && $0 ~ "^" key ":" { 
+      sub("^" key ": *", "")
+      gsub(/^[" ]+|[" ]+$/, "")
+      print
+      exit
+    }
+  ' "$file")
+  
+  # strip_code: remove fenced code blocks and inline code spans so that
+# documentation EXAMPLES of fence syntax are not checked as real fences
+strip_code() {
+  awk '
+    /^```/ { infence=!infence; next }
+    infence { next }
+    { gsub(/`[^`]*`/, ""); print }
+  ' "$1"
+}
+
+# Only check index files for required fences
+  if [[ "$type_val" == "index" ]]; then
+    # Extract all GENERATED:START and GENERATED:END fences (only on their own lines)
+    starts=()
+    ends=()
+    
+    while IFS= read -r line; do
+      if [[ -n "$line" ]]; then
+        starts+=("$line")
+      fi
+    done < <(strip_code "$file" | grep -E '^<!-- GENERATED:START:[^>]+ -->$' || true)
+    
+    while IFS= read -r line; do
+      if [[ -n "$line" ]]; then
+        ends+=("$line")
+      fi
+    done < <(strip_code "$file" | grep -E '^<!-- GENERATED:END:[^>]+ -->$' || true)
+    
+    if [[ ${#starts[@]} -eq 0 && ${#ends[@]} -eq 0 ]]; then
+      add_result "FAIL" "$file" "Index file missing GENERATED fences (start: 0, end: 0)"
+    elif [[ ${#starts[@]} -ne ${#ends[@]} ]]; then
+      add_result "FAIL" "$file" "Mismatched GENERATED fence count (start: ${#starts[@]}, end: ${#ends[@]})"
+    else
+      # Check each pair
+      for i in "${!starts[@]}"; do
+        start="${starts[i]}"
+        end="${ends[i]}"
+        
+        # Extract fence IDs
+        if [[ "$start" =~ GENERATED:START:([^>]+) ]]; then
+          start_id="${BASH_REMATCH[1]}"
+        else
+          add_result "FAIL" "$file" "Malformed GENERATED:START fence: $start"
+          continue
+        fi
+        
+        if [[ "$end" =~ GENERATED:END:([^>]+) ]]; then
+          end_id="${BASH_REMATCH[1]}"
+        else
+          add_result "FAIL" "$file" "Malformed GENERATED:END fence: $end"
+          continue
+        fi
+        
+        # Check IDs match
+        if [[ "$start_id" != "$end_id" ]]; then
+          add_result "FAIL" "$file" "Mismatched fence IDs: START=$start_id END=$end_id"
+        fi
+        
+        # Check global uniqueness
+        if [[ -n "${global_fence_ids[$start_id]:-}" ]]; then
+          add_result "FAIL" "$file" "Duplicate fence ID: $start_id (also in ${global_fence_ids[$start_id]})"
+        else
+          global_fence_ids[$start_id]="$file"
+        fi
+      done
+    fi
+  else
+    # Non-index files: check for any GENERATED fences and validate them (only on their own lines)
+    # Skip todo files as they may contain example fences in code blocks
+    if [[ "$type_val" != "todo" ]]; then
+      starts=()
+      ends=()
+      
+      while IFS= read -r line; do
+        if [[ -n "$line" ]]; then
+          starts+=("$line")
+        fi
+      done < <(strip_code "$file" | grep -E '^<!-- GENERATED:START:[^>]+ -->$' || true)
+      
+      while IFS= read -r line; do
+        if [[ -n "$line" ]]; then
+          ends+=("$line")
+        fi
+      done < <(strip_code "$file" | grep -E '^<!-- GENERATED:END:[^>]+ -->$' || true)
+      
+      if [[ ${#starts[@]} -gt 0 || ${#ends[@]} -gt 0 ]]; then
+        if [[ ${#starts[@]} -ne ${#ends[@]} ]]; then
+          add_result "FAIL" "$file" "Mismatched GENERATED fence count (start: ${#starts[@]}, end: ${#ends[@]})"
+        else
+          for i in "${!starts[@]}"; do
+            start="${starts[i]}"
+            end="${ends[i]}"
+            
+            if [[ "$start" =~ GENERATED:START:([^>]+) ]]; then
+              start_id="${BASH_REMATCH[1]}"
+            else
+              add_result "FAIL" "$file" "Malformed GENERATED:START fence: $start"
+              continue
+            fi
+            
+            if [[ "$end" =~ GENERATED:END:([^>]+) ]]; then
+              end_id="${BASH_REMATCH[1]}"
+            else
+              add_result "FAIL" "$file" "Malformed GENERATED:END fence: $end"
+              continue
+            fi
+            
+            if [[ "$start_id" != "$end_id" ]]; then
+              add_result "FAIL" "$file" "Mismatched fence IDs: START=$start_id END=$end_id"
+            fi
+            
+            if [[ -n "${global_fence_ids[$start_id]:-}" ]]; then
+              add_result "FAIL" "$file" "Duplicate fence ID: $start_id (also in ${global_fence_ids[$start_id]})"
+            else
+              global_fence_ids[$start_id]="$file"
+            fi
+          done
+        fi
+      fi
+    fi
+  fi
+done
+
+# Output results
+output_summary() {
+  if [[ "$WRITE_MODE" == "true" ]]; then
+    local out_file="${OUTPUT_PATH:-generated-fence-check-results.txt}"
+    output_results > "$out_file"
+    if [[ -n "$OUTPUT_PATH" ]]; then
+      echo "Results written to $OUTPUT_PATH"
+    else
+      echo "Results written to generated-fence-check-results.txt"
+    fi
+  else
+    output_results
+  fi
+}
+
+output_results() {
+  echo "=== Generated Fence Check Results ==="
+  echo "Files checked: ${#all_files[@]}"
+  echo "Total issues: ${#RESULTS[@]}"
+  echo "Unique fence IDs found: ${#global_fence_ids[@]}"
+  echo ""
+
+  for status in FAIL WARN; do
+    count=0
+    for result in "${RESULTS[@]}"; do
+      r_status="${result%%|*}"
+      if [[ "$r_status" == "$status" ]]; then
+        count=$((count+1))
+      fi
+    done
+    if [[ $count -gt 0 ]]; then
+      echo "=== $status ($count) ==="
+      for result in "${RESULTS[@]}"; do
+        r_status="${result%%|*}"
+        remainder="${result#*|}"
+        r_file="${remainder%%|*}"
+        r_msg="${remainder#*|}"
+        if [[ "$r_status" == "$status" ]]; then
+          echo "  $r_file: $r_msg"
+        fi
+      done
+      echo ""
+    fi
+  done
+
+  if [[ $FAIL -eq 0 ]]; then
+    echo "PASS: All GENERATED fences valid"
+  else
+    echo "FAIL: Generated fence check failed"
+  fi
+}
+
+output_summary
+
+exit $FAIL

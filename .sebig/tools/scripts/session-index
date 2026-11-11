@@ -1,0 +1,327 @@
+#!/usr/bin/env python3
+"""Session Index - Rebuilds session index notes (generated and planned)"""
+
+import sys
+import re
+import argparse
+from datetime import datetime
+from pathlib import Path
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--scope', choices=['completed', 'planned'], required=True)
+    parser.add_argument('--project', required=True)
+    parser.add_argument('--write', action="store_true")
+    parser.add_argument('--output-path')
+    args = parser.parse_args()
+
+    corpus_dir = Path("docs/graph")
+    project_file = corpus_dir / f"{args.project}.md"
+    
+    if not project_file.exists():
+        print(f"ERROR: Project file not found: {project_file}", file=sys.stderr)
+        sys.exit(1)
+
+    content = project_file.read_text()
+
+    if 'type: "project"' not in content and 'type: project' not in content:
+        print("ERROR: Not a project type", file=sys.stderr)
+        sys.exit(1)
+
+    # Find existing index notes for this project
+    generated_index_id = None
+    planned_index_id = None
+    
+    for f in sorted(corpus_dir.glob("*.md")):
+        if f == project_file:
+            continue
+        try:
+            fc = f.read_text()
+            if not fc.startswith('---'):
+                continue
+            parts = fc.split('---', 2)
+            if len(parts) < 3:
+                continue
+            fm = parts[1]
+            
+            type_match = re.search(r'^type:\s*["\']?([^"\']+)["\']?', fm, re.MULTILINE)
+            if not type_match or type_match.group(1) != 'index':
+                continue
+            
+            project_match = re.search(r'^project:\s*["\']?([^"\']+)["\']?', fm, re.MULTILINE)
+            if project_match and project_match.group(1) == args.project:
+                scope_match = re.search(r'^scope:\s*["\']?([^"\']+)["\']?', fm, re.MULTILINE)
+                if scope_match and scope_match.group(1) == 'completed':
+                    generated_index_id = f.stem
+                elif scope_match and scope_match.group(1) == 'planned':
+                    planned_index_id = f.stem
+        except:
+            pass
+
+    if args.scope == 'completed':
+        target_index_id = generated_index_id
+    else:
+        target_index_id = planned_index_id
+
+    if not target_index_id:
+        # Create new index note
+        timestamp = datetime.utcnow().strftime("%y%m%d%H%M%S")
+        suffix = ''.join([chr(ord('A') + (i % 26)) for i in range(4)])
+        target_index_id = f"{timestamp}-{suffix}"
+        print(f"Creating new {args.scope} session index: {target_index_id}")
+
+    index_file = corpus_dir / f"{target_index_id}.md"
+
+    # Build sessions list
+    if args.scope == 'completed':
+        sessions = []
+        for f in sorted(corpus_dir.glob("*.md")):
+            if f == project_file:
+                continue
+            try:
+                fc = f.read_text()
+                if not fc.startswith('---'):
+                    continue
+                parts = fc.split('---', 2)
+                if len(parts) < 3:
+                    continue
+                fm = parts[1]
+                
+                type_match = re.search(r'^type:\s*["\']?([^"\']+)["\']?', fm, re.MULTILINE)
+                if type_match and type_match.group(1) in ('session', 'session-note'):
+                    project_match = re.search(r'^project:\s*["\']?([^"\']+)["\']?', fm, re.MULTILINE)
+                    if project_match and project_match.group(1) == args.project:
+                        status_match = re.search(r'(planned|active|completed)', fm)
+                        if status_match and status_match.group(1) == 'completed':
+                            order_match = re.search(r'^order:\s*(\d+)', fm, re.MULTILINE)
+                            order = int(order_match.group(1)) if order_match else 9999
+                            alias_match = re.search(r'^alias:\s*\[([^\]]+)\]', fm, re.MULTILINE)
+                            alias = alias_match.group(1).split(',')[0].strip().strip(' "\'') if alias_match else f.stem
+                            sessions.append((order, f.stem, alias))
+            except:
+                pass
+        
+        sessions.sort(key=lambda x: x[0])
+        sessions_list = '\n'.join([f'  - [[{corpus_dir}/{sid}|{alias}]]' for _, sid, alias in sessions]) if sessions else '  # No completed sessions yet'
+    else:
+        # For planned, read existing index to preserve manual entries
+        sessions_list = '  # Add planned sessions with aliases:\n  # - [[session-id|Session Alias]]'
+        if planned_index_id:
+            idx_file = corpus_dir / f"{planned_index_id}.md"
+            if idx_file.exists():
+                idx_content = idx_file.read_text()
+                parts = idx_content.split('---', 2)
+                if len(parts) >= 3:
+                    idx_body = parts[2]
+                    sessions_list = []
+                    for m in re.finditer(r'\[\[([0-9]{12}-[A-Z0-9]{4})\|([^\]]+)\]\]', idx_body):
+                        sessions_list.append(f'  - [[{m.group(1)}|{m.group(2)}]]')
+                    if not sessions_list:
+                        for m in re.finditer(r'\[\[([0-9]{12}-[A-Z0-9]{4})\]\]', idx_body):
+                            sessions_list.append(f'  - [[{m.group(1)}]]')
+                    sessions_list = '\n'.join(sessions_list) if sessions_list else sessions_list
+
+    # Build index note
+    timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    alias_line = 'alias:\n  - "Session Index - Generated"\n  - "Old Sessions"' if args.scope == 'completed' else 'alias:\n  - "Session Index - Planned"\n  - "Upcoming Sessions"'
+    scope_val = args.scope
+    generated_from = '["type:session", "type:session-note"]' if args.scope == 'completed' else '[]'
+    disclaimer = "\n---\n\n*Address, not currency guarantee — run `sebig session-index rebuild --scope completed --project <id>` for latest.*" if args.scope == 'completed' else "\n---\n\n*Manually curated — add/remove/reorder planned sessions with aliases for sprint planning.*"
+
+    fm = f"""id: "{target_index_id}"
+type: "index"
+{alias_line}
+tags:
+  - "index"
+  - "session"
+  - "project"
+  - "domain"
+  - "{scope_val}"
+project: "{args.project}"
+scope: "{scope_val}"
+generated_from: {generated_from}
+"""
+
+    fence_name = f"session-index-{args.scope}"
+    sessions_list_fenced = "<!-- GENERATED:START:" + fence_name + " -->\n" + sessions_list + "\n<!-- GENERATED:END:" + fence_name + " -->"
+
+    index_body = f"""# Session Index — {args.scope.capitalize()}
+
+Auto-generated index of {args.scope} sessions for project {args.project}. Regenerate with `sebig session-index rebuild --scope {args.scope} --project {args.project}`.
+
+{sessions_list_fenced}
+
+{disclaimer}
+"""
+
+    new_content = f'---\n{fm}\n---{index_body}'
+
+    if args.write:
+        if args.output_path:
+            Path(args.output_path).write_text(new_content)
+        else:
+            index_file.write_text(new_content)
+        print(f"Updated {args.scope} session index: {target_index_id}")
+    else:
+        print(new_content)
+
+if __name__ == '__main__':
+    import sys, re
+    from datetime import datetime
+    from pathlib import Path
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--scope', choices=['completed', 'planned'], required=True)
+    parser.add_argument('--project', required=True)
+    parser.add_argument('--write', action='store_true')
+    parser.add_argument('--output-path')
+    args = parser.parse_args()
+
+    corpus_dir = Path("docs/graph")
+    project_file = corpus_dir / f"{args.project}.md"
+    
+    if not project_file.exists():
+        print(f"ERROR: Project file not found: {project_file}", file=sys.stderr)
+        sys.exit(1)
+
+    content = project_file.read_text()
+
+    if 'type: "project"' not in content and 'type: project' not in content:
+        print("ERROR: Not a project type", file=sys.stderr)
+        sys.exit(1)
+
+    # Find existing index notes for this project
+    generated_index_id = None
+    planned_index_id = None
+    
+    for f in sorted(corpus_dir.glob("*.md")):
+        if f == project_file:
+            continue
+        try:
+            fc = f.read_text()
+            if not fc.startswith('---'):
+                continue
+            parts = fc.split('---', 2)
+            if len(parts) < 3:
+                continue
+            fm = parts[1]
+            
+            type_match = re.search(r'^type:\s*["\']?([^"\']+)["\']?', fm, re.MULTILINE)
+            if type_match and type_match.group(1) == 'index':
+                project_match = re.search(r'^project:\s*["\']?([^"\']+)["\']?', fm, re.MULTILINE)
+                if project_match and project_match.group(1) == args.project:
+                    scope_match = re.search(r'^scope:\s*["\']?([^"\']+)["\']?', fm, re.MULTILINE)
+                    if scope_match and scope_match.group(1) == 'completed':
+                        generated_index_id = f.stem
+                    elif scope_match and scope_match.group(1) == 'planned':
+                        planned_index_id = f.stem
+        except:
+            pass
+
+    if args.scope == 'completed':
+        target_index_id = generated_index_id
+    else:
+        target_index_id = planned_index_id
+
+    if not target_index_id:
+        timestamp = datetime.utcnow().strftime("%y%m%d%H%M%S")
+        suffix = ''.join([chr(ord('A') + (i % 26)) for i in range(4)])
+        target_index_id = f"{timestamp}-{suffix}"
+        print(f"Creating new {args.scope} session index: {target_index_id}")
+
+    index_file = corpus_dir / f"{target_index_id}.md"
+
+    # Build sessions list
+    if args.scope == 'completed':
+        sessions = []
+        for f in sorted(corpus_dir.glob("*.md")):
+            if f == project_file:
+                continue
+            try:
+                fc = f.read_text()
+                if not fc.startswith('---'):
+                    continue
+                parts = fc.split('---', 2)
+                if len(parts) < 3:
+                    continue
+                fm = parts[1]
+                
+                type_match = re.search(r'^type:\s*["\']?([^"\']+)["\']?', fm, re.MULTILINE)
+                if type_match and type_match.group(1) in ('session', 'session-note'):
+                    project_match = re.search(r'^project:\s*["\']?([^"\']+)["\']?', fm, re.MULTILINE)
+                    if project_match and project_match.group(1) == args.project:
+                        status_match = re.search(r'(planned|active|completed)', fm)
+                        if status_match and status_match.group(1) == 'completed':
+                            order_match = re.search(r'^order:\s*(\d+)', fm, re.MULTILINE)
+                            order = int(order_match.group(1)) if order_match else 9999
+                            alias_match = re.search(r'^alias:\s*\[([^\]]+)\]', fm, re.MULTILINE)
+                            alias = alias_match.group(1).split(',')[0].strip().strip(' "\'') if alias_match else f.stem
+                            sessions.append((order, f.stem, alias))
+            except:
+                pass
+        
+        sessions.sort(key=lambda x: x[0])
+        sessions_list = '\n'.join([f'  - [[{corpus_dir}/{sid}|{alias}]]' for _, sid, alias in sessions]) if sessions else '  # No completed sessions yet'
+        fence_name = f"session-index-{args.scope}"
+        sessions_list_fenced = "<!-- GENERATED:START:" + fence_name + " -->\n" + sessions_list + "\n<!-- GENERATED:END:" + fence_name + " -->"
+
+        sessions_list_fenced = "<!-- GENERATED:START:" + fence_name + " -->\n" + sessions_list + "\n<!-- GENERATED:END:" + fence_name + " -->"
+    else:
+        sessions_list = '  # Add planned sessions with aliases:\n  # - [[session-id|Session Alias]]'
+        if planned_index_id:
+            idx_file = corpus_dir / f"{planned_index_id}.md"
+            if idx_file.exists():
+                idx_content = idx_file.read_text()
+                parts = idx_content.split('---', 2)
+                if len(parts) >= 3:
+                    idx_body = parts[2]
+                    sessions_list = []
+                    for m in re.finditer(r'\[\[([0-9]{12}-[A-Z0-9]{4})\|([^\]]+)\]\]', idx_body):
+                        sessions_list.append(f'  - [[{m.group(1)}|{m.group(2)}]]')
+                    if not sessions_list:
+                        for m in re.finditer(r'\[\[([0-9]{12}-[A-Z0-9]{4})\]\]', idx_body):
+                            sessions_list.append(f'  - [[{m.group(1)}]]')
+                    sessions_list = '\n'.join(sessions_list) if sessions_list else ''
+        fence_name = f"session-index-{args.scope}"
+        sessions_list_fenced = "<!-- GENERATED:START:" + fence_name + " -->\n" + sessions_list + "\n<!-- GENERATED:END:" + fence_name + " -->"
+
+    # Build index note
+    timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    alias_line = 'alias:\n  - "Session Index - Generated"\n  - "Old Sessions"' if args.scope == 'completed' else 'alias:\n  - "Session Index - Planned"\n  - "Upcoming Sessions"'
+    scope_val = args.scope
+    generated_from = '["type:session", "type:session-note"]' if args.scope == 'completed' else '[]'
+    disclaimer = "\n---\n\n*Address, not currency guarantee — run `sebig session-index rebuild --scope completed --project <id>` for latest.*" if args.scope == 'completed' else "\n---\n\n*Manually curated — add/remove/reorder planned sessions with aliases for sprint planning.*"
+
+    fm = f"""id: "{target_index_id}"
+type: "index"
+{alias_line}
+tags:
+  - "index"
+  - "session"
+  - "project"
+  - "domain"
+  - "{scope_val}"
+project: "{args.project}"
+scope: "{scope_val}"
+generated_from: {generated_from}
+"""
+
+    index_body = f"""# Session Index — {args.scope.capitalize()}
+
+Auto-generated index of {args.scope} sessions for project {args.project}. Regenerate with `sebig session-index rebuild --scope {args.scope} --project {args.project}`.
+
+{sessions_list_fenced}
+
+{disclaimer}
+"""
+
+    new_content = f'---\n{fm}\n---{index_body}'
+
+    if args.write:
+        if args.output_path:
+            Path(args.output_path).write_text(new_content)
+        else:
+            index_file.write_text(new_content)
+        print(f"Updated {args.scope} session index: {target_index_id}")
+    else:
+        print(new_content)
