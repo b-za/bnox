@@ -89,6 +89,17 @@ let
           type = lib.types.attrsOf lib.types.str;
           default = { };
         };
+        # D-020 §1 (from .bnox/thing.nix): what a host-install thing needs to work
+        shell = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = "The thing's user gets bash instead of nologin (agents that run commands, G33).";
+        };
+        nixLd = lib.mkOption {
+          type = lib.types.bool;
+          default = false;
+          description = "Run downloaded prebuilt Linux binaries: nix-ld + NIX_LD vars in the thing's units (G26).";
+        };
         components = lib.mkOption {
           type = lib.types.attrsOf (lib.types.submoduleWith {
             modules = [ componentSubmodule loader.componentSubmodule ];

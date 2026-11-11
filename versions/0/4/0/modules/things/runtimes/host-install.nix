@@ -17,6 +17,7 @@ let
         inherit (comp) execStart;
         nats = thing.hardening.network.nats;
         env = thing.env;
+        inherit (thing) nixLd;
         egress = config.bnox.egress.resolved.${thing.name}; # D-019
         allSlots = thing.secrets ++ comp.secrets ++ lib.optional thing.hardening.network.nats "nats_seed";
       }
@@ -42,6 +43,11 @@ let
           Environment =
             [ "HOME=/var/lib/${comp.thing}" ]
             ++ lib.mapAttrsToList (k: v: "${k}=${v}") comp.env
+            # nix-ld's sessionVariables never reach system services (G26)
+            ++ lib.optionals comp.nixLd [
+              "NIX_LD=/run/current-system/sw/share/nix-ld/lib/ld.so"
+              "NIX_LD_LIBRARY_PATH=/run/current-system/sw/share/nix-ld/lib"
+            ]
             ++ lib.optionals (comp.egress.mode == "proxy") (
               let
                 url = "http://127.0.0.1:${toString comp.egress.port}";

@@ -91,6 +91,25 @@ Final level = the more restrictive of `inbound` (default `internal`) and `exposu
 
 Works for every shape and runtime: static sites serve their files, everything else is proxied to `127.0.0.1:<ingressPort>`. Login protection is the app's own job. A domain without an exposing level is reported as a rebuild warning.
 
+## Host-install switches (from 0.4)
+
+Two `.bnox/thing.nix` switches for host-install things that need them to work at all (D-020). Both default off; your control over the thing stays in NATS, `egress` and `inbound`.
+
+- `shell = true` — the thing's user gets bash instead of `nologin` (agents whose job is running commands).
+- `nixLd = true` — enables nix-ld and sets `NIX_LD`/`NIX_LD_LIBRARY_PATH` in the thing's units, so downloaded prebuilt Linux programs (managed Python, Node, …) can start on NixOS.
+
+## Container images: `bnox.lib.mkImage` (from 0.4)
+
+Build container images with bnox's helper instead of bare `dockerTools` — it always includes `/etc/passwd` + `/etc/group`, `HOME=/root`, a CA store (`/etc/ssl/certs/ca-certificates.crt`, `SSL_CERT_FILE`) and `/tmp`, each of which a bare image lacks:
+
+```nix
+# thing repo flake.nix (inputs.bnox.url = "github:b-za/bnox?dir=versions/0/4/0")
+images.x86_64-linux.main = bnox.lib.mkImage {
+  inherit pkgs; name = "myapp-main";
+  contents = [ myapp ]; entrypoint = [ "/bin/myapp" ];
+};
+```
+
 ## Shapes
 
 | Shape | Meaning | bnox provides |

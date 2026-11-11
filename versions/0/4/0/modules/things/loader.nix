@@ -16,6 +16,8 @@ let
         secrets = lib.mkDefault (manifest.secrets or [ ]);
         env = lib.mapAttrs (_: lib.mkDefault) (manifest.env or { });
         egress.needs = lib.mkDefault (manifest.egress or [ ]); # D-019
+        shell = lib.mkDefault (manifest.shell or false); # D-020
+        nixLd = lib.mkDefault (manifest.nixLd or false);
         branch = lib.mkDefault (manifest.branch or "main");
         # D-018: nats = true, or { offer = {publish, subscribe}; roles = { <r> = {…}; }; }
         hardening.network.nats = lib.mkDefault (
