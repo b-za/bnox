@@ -70,6 +70,8 @@ bnox.things.gsheet.egress.grant = [ "googleapis.com" ];   # or "any"
 
 Each thing with a domain list gets **its own** proxy (`bnox-egress-<thing>`, tinyproxy on `127.0.0.1`, ports from `bnox.egress.basePort` = 18100, one per thing) that allows exactly its domains, and `HTTPS_PROXY`/`HTTP_PROXY` in its environment. Containers reach it through slirp at `10.0.2.2`. Software that ignores `HTTPS_PROXY` simply cannot get out. `hardening.network.outboundHTTPS` is gone — use `egress`.
 
+**Host-wide lockdown (opt-in).** The rules above bind bnox's own units. `bnox.egress.hostLockdown = true` also stops everything else — stray processes, interactive users, hand-written units — from connecting out on ports 80/443: an nftables output table (`bnox_egress`) where only root, the egress proxies, Caddy, host-install things granted direct `"any"`, and `bnox.egress.hostLockdownAllowUsers` may. Fail-open by construction (accept by default, explicit drops), never touches input, loopback or other ports. Meant for agent hosts; leave it off on a desktop, or add your user to `hostLockdownAllowUsers`.
+
 ## Inbound: `inbound` / `exposure` (from 0.4)
 
 The mirror of `egress`. Locked by default: a component is reachable only on the host's loopback until the host exposes it (D-019).
