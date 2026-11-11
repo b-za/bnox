@@ -31,6 +31,16 @@ let
           type = lib.types.nullOr lib.types.str;
           default = null;
         };
+        # D-019 §3: host grants the inbound level; the thing caps it
+        inbound = lib.mkOption {
+          type = lib.types.enum [ "internal" "tailnet" "public" ];
+          default = "internal";
+        };
+        exposure = lib.mkOption {
+          type = lib.types.enum [ "internal" "tailnet" "public" ];
+          default = "public";
+          description = "From .bnox: the most exposure this component accepts.";
+        };
         ingressPort = lib.mkOption {
           type = lib.types.nullOr lib.types.int;
           default = null;
@@ -148,6 +158,7 @@ in
     ./shapes/default.nix
     ./runtimes/default.nix
     ./egress.nix
+    ./inbound.nix
     loader.topLevel
   ];
 

@@ -45,6 +45,7 @@ let
         natsSubject = lib.mkDefault (comp.natsSubject or null);
         secrets = lib.mkDefault (comp.secrets or [ ]);
         execStart = lib.mkDefault (comp.execStart or null);
+        exposure = lib.mkDefault (comp.exposure or "public"); # D-019
       };
     };
 

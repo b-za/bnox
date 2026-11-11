@@ -70,6 +70,27 @@ bnox.things.gsheet.egress.grant = [ "googleapis.com" ];   # or "any"
 
 Each thing with a domain list gets **its own** proxy (`bnox-egress-<thing>`, tinyproxy on `127.0.0.1`, ports from `bnox.egress.basePort` = 18100, one per thing) that allows exactly its domains, and `HTTPS_PROXY`/`HTTP_PROXY` in its environment. Containers reach it through slirp at `10.0.2.2`. Software that ignores `HTTPS_PROXY` simply cannot get out. `hardening.network.outboundHTTPS` is gone — use `egress`.
 
+## Inbound: `inbound` / `exposure` (from 0.4)
+
+The mirror of `egress`. Locked by default: a component is reachable only on the host's loopback until the host exposes it (D-019).
+
+```nix
+# .bnox/<component>.nix — the port, and the most exposure the component accepts (default public)
+ingressPort = 9191; exposure = "tailnet";
+# host config — the level, plus the name (the host owns domains and certificates)
+bnox.things.che.components.dashboard = { domain = "agent-che.example.com"; inbound = "public"; };
+```
+
+Final level = the more restrictive of `inbound` (default `internal`) and `exposure`:
+
+| Level | Result |
+|---|---|
+| `internal` | no vhost; loopback only |
+| `tailnet` | Caddy vhost that drops every client outside the tailnet (`100.64.0.0/10`, `fd7a:115c:a1e0::/48`) |
+| `public` | plain Caddy vhost (automatic HTTPS) |
+
+Works for every shape and runtime: static sites serve their files, everything else is proxied to `127.0.0.1:<ingressPort>`. Login protection is the app's own job. A domain without an exposing level is reported as a rebuild warning.
+
 ## Shapes
 
 | Shape | Meaning | bnox provides |
