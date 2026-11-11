@@ -515,3 +515,77 @@ D-009 (Hermes) is the first use of this deviation clause.
 - bnox-bg (agenthub) repins to 0/3/0; step-3 worker things declare `nats = true` in `.bnox/thing.nix` and get the full wiring; the host's keygen gains one env-file write per NATS thing.
 - Hosts pinned to 0/2/0 with outboundHTTPS containers or host-install things were already broken (units fail to start on the first run); 0/3/0 is the fix path — versioning working as designed.
 - The container→broker path exposes the host loopback to the container by design (that is what allow_host_loopback means); the broker's nkey auth is the enforcement layer. The knob stays opt-in per thing.
+
+---
+
+## D-017 — bnox-bg lessons, fix batch (series 0.3, patch 0/3/1)
+**Date:** 2026-11-11
+**Status:** accepted
+**Context:** agenthub (bnox-bg) is the first real consumer of bnox 0/3/0. Its gotcha log (bnox-bg `docs/graph/*-G0xx.md`) and host config show bnox bugs worked around host-side: G20 (pure flake eval cannot read `/srv/<thing>/.bnox/`, so the documented `source = "/srv/<thing>"` can never load a manifest under `nixos-rebuild --flake`), G21/G22/G24/G25/G31 (the generated `<thing>-build` unit is too locked down to build: libgit2 safe.directory, unwritable fetcher cache, podman runtime paths, nix build-log dir, `podman save` refusing to overwrite a same-sha tar), G28 (host-install units get slot path units but no env files), missing slot files (podman refuses to start a container whose env file is absent; bnox-bg pre-creates them via tmpfiles). Reviewed one at a time with bh. Also: 0/3/0 was frozen after a single probe container round-trip — the deploy pipeline was never run against a real thing on the locked broker, and was broken (G23).
+
+**Decision:**
+
+1. **Thing manifest and thing code have separate sources.** `bnox.things.<name>.source` is where bnox reads `.bnox/` at evaluation — documented as a locked flake input of the host repo (a store path). The code is always built from the git checkout `/srv/<name>` by the deploy pipeline (already hardcoded in `pipeline.nix`). This keeps D-006's hard constraint (app deploys never trigger `nixos-rebuild`); the lock only needs bumping when `.bnox/` itself changes. Option A (flake input for both, deploy = lock bump + rebuild) was considered and rejected precisely because it violates D-006. The build unit **warns** when `/srv/<name>/.bnox/` differs from the evaluated manifest.
+2. **Build unit fixes, taken over from bnox-bg as proven:** system `/etc/gitconfig` `safe.directory` for every thing checkout (covers nix's libgit2, not just the git CLI); `XDG_CACHE_HOME=/var/lib/<name>/.cache`; ReadWritePaths gain `/run/lock /run/libpod /run/containers /var/cache/containers /nix/var/log/nix`; the same-sha tar is removed before `podman save` (bnox-bg wiped the whole images dir, which would also destroy the rollback tarballs D-011 keeps — narrowed to the one file).
+3. **Host-install runtime loads slots as env files** (`EnvironmentFile`), like the container runtime: `nats_seed` required, other slots `-`-prefixed. The host-install unit's secrets dir becomes read-only (it was writable — an app must not be able to overwrite its own credentials). Option B (files only, app reads by path) rejected for consistency; env inheritance by child processes changes little since the app user could read the files anyway.
+4. **bnox creates every declared slot as an empty file, root:root 0600** (tmpfiles `f`, which never rewrites an existing file — G45). Supersedes the "slot owned by the thing's user" wording in the series docs: systemd reads env files as PID 1, so root-only is strictly safer.
+5. **Pipeline publishes under NATS auth (G23) and the nats-py dispatcher's missing nkey support (G4) are NOT patched here** — they are solved by D-018 (NATS identity), not by another stopgap.
+6. **Done rule (process):** a version may only be set `status: done` after, on a real host, (a) a real thing has completed the full deploy path git push → webhook → sync → build → restart, and (b) `bnox-validate` passes (once it exists, D-020; until then, the NATS round-trip checks the host already has).
+
+**Alternatives considered:** listed inline above.
+
+**Consequences:**
+
+- bnox-bg can drop its G21/G22/G24/G25/G31 build-unit overrides, its slot-file tmpfiles and its hermes `EnvironmentFile` lines once it pins 0/3/1.
+- Hosts using `source = "/srv/<thing>"` were already broken under flake eval; docs now show the flake-input form.
+- Slot file ownership changes from thing user to root on upgrade only for newly-created files; existing files keep their mode (tmpfiles `f` does not touch them).
+
+---
+
+## D-018 — NATS identity: logins always, two-level permissions, roles (series 0.4)
+**Date:** 2026-11-11
+**Status:** accepted (implementation: 0/4/0)
+**Context:** bnox's broker is open (D-006 L0); L1 (per-thing users) was designed-for. agenthub built its own lockdown: per-service nkeys generated on the host (`nkey.py`, keygen unit), per-service permission files, a runtime assembler writing the auth config (G12). bnox 0/3/0 ships an implied `nats_seed` slot that nothing in bnox fills, and its pipeline units break the moment the broker requires logins (G23, G4). agenthub also used its own subject layout (`agenthub.<worker>...`, one shared stream) — improvised, not reasoned against D-006.
+
+**Decision:**
+
+1. **NATS logins are always required.** No anonymous user. Not opt-in.
+2. **Subject layout stays D-006:** `host.>` bnox-owned, `things.<name>.>` per thing, one JetStream stream per thing. Hosts fit custom structure beneath a thing's prefix (agenthub moves onto it).
+3. **Two-level permissions; the final grant is what both levels allow (intersection):**
+   - **Host level** decides who may talk to whom (from `deps` / explicit grants — e.g. che → gsheet), as a ceiling.
+   - **Thing level** (`.bnox/`) declares what the thing offers to others (e.g. publish `command.>`, subscribe `event.>`) — so no host grant can let another identity publish fake events for it.
+4. **Roles:** a thing's `.bnox/` may declare named roles (e.g. `user`, `admin`) as subsets of its offer; the host assigns a role per dependent. NATS enforces them (a non-admin cannot even publish an admin command).
+5. **Keys are generated on the host at runtime** (agenthub's approach: never in git or the store; a rebuilt host makes new keys and permissions follow names, not keys). Supersedes D-007's placement of "NATS auth" in the agenix infra layer. **Recorded alternative:** agenix-encrypted keys, for a future case where a key must survive host rebuilds.
+6. **Non-thing identities:** bnox ships fixed identities for its own services (webhook receiver, dispatcher, sync/build units — this fixes G23) scoped to `host.deploy.>`; an `ops` identity with full access, root-readable only; host config may declare extra identities with their own permissions (e.g. agenthub's echo canary). The dispatcher moves off nats-py (G4) — agenthub's Go `deploy-bridge` is the reference.
+7. bnox fills the implied `nats_seed` slot itself (absorbs the keygen).
+
+**Consequences:** supersedes D-006 §8 L0 (L1 becomes the floor) and D-007's NATS-auth line; bnox-bg retires its keygen/assembler/permission files in favour of bnox's and moves agenthub subjects under `things.<name>.>`; `bnox-validate` (D-020) is generated from the computed permission matrix.
+
+---
+
+## D-019 — Thing config and network exposure: `env`, egress, inbound (series 0.4)
+**Date:** 2026-11-11
+**Status:** accepted (implementation: 0/4/0)
+**Context:** bnox has no plain (non-secret) config channel — agenthub passed `GSHEET_ADMINS` through a secret slot written by tmpfiles (value changes silently ignored, G45). Egress is per-unit address rules only (no domain filtering; with outbound HTTPS a thing reaches anywhere); agenthub added owner-based nftables rules + a tinyproxy domain allowlist (`egress.nix`, `proxy.nix`). Inbound is Caddy for container webapp/http-api only; host-install dashboards needed hand-written vhosts (`caddy.nix`), and the only exposure level is "public".
+
+**Decision:**
+
+1. **`env`** (attrset) at both levels: thing `.bnox/` for defaults, host config for host-specific values; host wins per key. Both runtimes. Changes take a rebuild (config, not secrets).
+2. **Egress — locked by default:** no outbound unless granted. Thing `.bnox/` declares its needs (domain list, or `"any"`); host config grants a ceiling (domain list, or `"any"`); final = intersection; **nothing is allowed until the host grants** (explicit, like NATS deps). Domain lists go through a bnox-managed allowlisting proxy (`HTTPS_PROXY` injected); `"any"` on both sides means direct.
+3. **Inbound — the mirror:** thing `.bnox/` declares its port and the maximum exposure it accepts; host grants a level `internal` / `tailnet` / `public` (and supplies domain + TLS); final = the more restrictive; default `internal`. Works for both runtimes (absorbs the host-install Caddy gap). Asymmetries accepted: the host supplies name/cert; outbound is a domain list, inbound a level; login protection stays the app's. An outbound `tailnet` level was raised, not adopted.
+
+**Consequences:** bnox-bg's `egress.nix`/`proxy.nix`/`caddy.nix` and the `gsheet_admins` slot become declarations; every existing thing needs egress grants after upgrading to 0/4/0 (locked by default is a behaviour change — minor-version material).
+
+---
+
+## D-020 — Host-install switches, image helper, self-test (series 0.4)
+**Date:** 2026-11-11
+**Status:** accepted (implementation: 0/4/0)
+**Context:** Hermes needed a login shell (bnox thing users get `nologin`; its terminal tool died — G33) and nix-ld with its variables in the unit (prebuilt glibc binaries — G26). gsheet's bare dockerTools image lacked `/etc/passwd`, `HOME` and a CA store (G18/G19/G30; the last only surfaced on the first live call). agenthub's `agenthub-validate` proves broker permissions by publishing as each identity.
+
+**Decision:**
+
+1. **Host-install switches in `.bnox/`:** `shell = true` (thing user gets bash) and `nixLd = true` (nix-ld enabled + `NIX_LD`/`NIX_LD_LIBRARY_PATH` set in the unit). Both default off; host-install only. These enable the thing to work — control stays in NATS/egress/inbound.
+2. **`bnox.lib.mkImage`:** an image helper that always bakes a root `/etc/passwd`, `HOME`, and CA certificates; things use it instead of bare dockerTools.
+3. **`bnox-validate`:** generated from the computed NATS permission matrix (D-018), tests every grant and every denial at the broker; later extended to egress/inbound. Part of the done rule (D-017 §6).
+4. **Docs notes:** host repos pin bnox's nixpkgs explicitly (`follows`); `nixos-rebuild` may exit 4 when a NATS auth change restarts the broker mid-switch (G59) — check `systemctl is-active` after a few seconds.
