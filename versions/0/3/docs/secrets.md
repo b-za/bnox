@@ -45,10 +45,10 @@ A starter rules file ships at `secrets/secrets.nix.example` inside each bnox ver
 Things declare slot names in `.bnox/`; the host binds them; values are plain files:
 
 ```
-/var/lib/bnox/secrets/<thing>/<slot>/
+/var/lib/bnox/secrets/<thing>/<slot>
 ```
 
-Ownership is set to the thing's user automatically. Each slot is watched by a systemd-path unit: write a new value (SSH, scp, whatever) and the thing's service restarts — **no rebuild, no re-encryption**. This is deliberate: secrets an application reads change far more often than secrets the OS needs.
+Each slot is a single file, an env file (`NAME=value` lines). bnox creates every declared slot as an **empty file, root-only (0600)**, so a thing can start before its values land; existing files are never touched (tmpfiles `f` writes only at creation — so don't use tmpfiles to *set* a value: a change is silently ignored). The slot directory belongs to the thing's user, but the files are root's: systemd reads them as PID 1 and loads them as environment variables into the thing — for both runtimes (container and host-install, from 0/3/1). Host-install things cannot write their secrets directory. Each slot is watched by a systemd-path unit: write a new value (SSH, scp, whatever) and the thing's service restarts — **no rebuild, no re-encryption**. This is deliberate: secrets an application reads change far more often than secrets the OS needs.
 
 A `nats-kv` backend (pull from NATS KV, encrypted with the host key) is designed-for but not built; the slot contract is identical, so things and host configs won't change if it lands.
 

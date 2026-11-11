@@ -39,7 +39,11 @@ in
                   "d ${parentDir} 0750 ${slot.owner} ${slot.group} -"
               ) cfg.fileSlots
             )
-          );
+          )
+          # D-017 §4: every declared slot exists as an empty root-only file
+          # (podman refuses to start on a missing env file). tmpfiles "f"
+          # writes only at creation — an existing value is never touched.
+          ++ lib.mapAttrsToList (key: _slot: "f ${secretsRoot}/${key} 0600 root root -") cfg.fileSlots;
       })
     ]
   );

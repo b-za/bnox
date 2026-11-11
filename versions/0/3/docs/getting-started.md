@@ -56,7 +56,16 @@ my-hosts/
 Notes:
 
 - Pinning happens twice: the `?dir=` selects the bnox version; the repo's `flake.lock` then freezes the exact commit. Because nixpkgs is taken from `bnox.inputs.nixpkgs`, a version pin freezes bnox **and** its nixpkgs together.
-- To upgrade bnox: change the `?dir=` to a newer version (or series) and `nix flake update bnox`. Hosts never drift onto an untested mix.
+- To upgrade bnox: change the `?dir=` to a newer version (or series) and `nix flake update bnox`.
+- **Pin nixpkgs explicitly.** Observed on agenthub: `nix flake update bnox` re-resolved bnox's nixpkgs to the `nixos-26.05` branch tip instead of the revision in the version's own `flake.lock`. Declare nixpkgs at the rev the bnox version locks and make bnox follow it:
+
+  ```nix
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/8623c4c20aa4ca2f5fb81510d2944066c3fb0d96"; # = versions/0/3/<patch>/flake.lock
+  inputs.bnox.url = "github:b-za/bnox?dir=versions/0/3/1";
+  inputs.bnox.inputs.nixpkgs.follows = "nixpkgs";
+  ```
+
+  Update the rev whenever you move to a bnox version with a different lock.
 - Local development before your host repo has a remote: `inputs.bnox.url = "git+file:../bnox?dir=versions/0/2/0";` (requires the bnox checkout to be committed).
 
 ## 2. Write the host

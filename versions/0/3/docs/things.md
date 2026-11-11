@@ -5,13 +5,21 @@ A **thing** is an application hosted by bnox: a webapp, a static site, an HTTP A
 ## Declaring a thing on a host
 
 ```nix
+# host repo flake.nix: the thing repo is a flake input (inputs.myapp.url = "git+ssh://…/myapp.git")
 bnox.things.myapp = {
   enable = true;
-  source = "/srv/myapp";               # git checkout on host (deployment syncs it)
+  source = "${myapp}";                  # where bnox reads .bnox/ — a locked flake input
   branch = "main";                      # optional; default main, .bnox/ may declare it
   components.web.domain = "myapp.example.com";
 };
 ```
+
+**Two copies, two jobs (from 0/3/1):**
+
+- `source` is only where bnox reads the thing's `.bnox/` manifest at evaluation. It must be a store path — a flake input of the host repo. Flake evaluation is pure: a `/srv/...` path is invisible to it, so `source = "/srv/myapp"` can never load a manifest under `nixos-rebuild --flake`.
+- The **code** is always built from the git checkout `/srv/<name>` by the deploy pipeline ([deployment.md](./deployment.md)). Pushing code never needs a rebuild.
+- Bump the host repo's lock (`nix flake update myapp`) and rebuild **only when `.bnox/` changes**. The build unit logs a `WARNING` when `/srv/<name>/.bnox/` differs from the evaluated manifest.
+- Static sites are served from `source`, so they update with the lock, not with the pipeline.
 
 Host config carries only host-specific bindings (enable, source, domain, secrets). Thing-intrinsic facts (shape, runtime, ports, subjects, execStart, deps) are read from the thing's own repo — never duplicated in host config.
 

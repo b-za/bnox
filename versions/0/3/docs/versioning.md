@@ -33,6 +33,7 @@ changes: <what changed vs the previous version>
 
 1. To start a new version: copy the previous version directory, commit the copy, then develop inside it (`status: wip`).
 2. When it's finished: set `status: done`. No changes after that — **not ever**.
+   **Done rule (D-017):** a version may be set `done` only after, on a real host, (a) a real thing has gone the whole deploy path — git push → webhook → sync → build → restart — and (b) `bnox-validate` passes (once it exists; until then, the host's own NATS round-trip checks). Evaluating cleanly or running a probe is not enough.
 3. **Fixes are never copied back.** Wanting a fix means taking the new version. This is the whole point of the model: a `done` version is a name you can trust for the life of the host.
 4. Bump rules: patch = fixes only; minor = feature batch (new series); major = breaking/philosophy change.
 

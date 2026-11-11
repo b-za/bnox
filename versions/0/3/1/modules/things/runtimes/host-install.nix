@@ -35,10 +35,18 @@ let
           Restart = "on-failure";
           RestartSec = 5;
           Environment = [ "HOME=/var/lib/${comp.thing}" ] ++ lib.optional comp.nats "NATS_URL=nats://127.0.0.1:4222";
+          # D-017 §3 (G28): slots load as env files, as in the container
+          # runtime. PID 1 reads them, so root-only 0600 slot files work.
+          # nats_seed is required; other slots may land after first boot
+          # ("-": start without, the slot's path unit restarts on arrival).
+          EnvironmentFile = map (
+            slot: (if slot == "nats_seed" then "" else "-") + "/var/lib/bnox/secrets/${comp.thing}/${slot}"
+          ) comp.allSlots;
         } // (hardening.bundle {
+          # D-017 §3: the secrets dir is no longer writable — a thing must not
+          # be able to overwrite its own credentials
           writablePaths = [
             "/var/lib/${comp.thing}"
-            "/var/lib/bnox/secrets/${comp.thing}"
           ];
           ipAddressAllow = [ "any" ];
         });

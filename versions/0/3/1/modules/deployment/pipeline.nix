@@ -103,7 +103,9 @@ let
           ProtectHome = true;
           ReadWritePaths = "/srv/${name} /var/lib/${name}";
           IPAddressDeny = "any";
-          IPAddressAllow = ":443 :22 :53";
+          # systemd 260 IPAddressAllow is address-only (D-016 §5, G13): the 0/3/0
+          # ":443 :22 :53" list was load-invalid; fetch needs the internet → any
+          IPAddressAllow = "any";
         };
         script = ''
           set -uo pipefail
@@ -134,7 +136,7 @@ let
         buildLoop = lib.concatMapStringsSep "\n" (
           comp:
           ''
-            imgpath=$(${pkgs.nix}/bin/nix build --no-link --print-out-paths "/srv/${name}#images.${pkgs.system}.${comp}") || fail "nix build ${comp} failed"
+            imgpath=$(${pkgs.nix}/bin/nix build --no-link --print-out-paths "/srv/${name}#images.${pkgs.stdenv.hostPlatform.system}.${comp}") || fail "nix build ${comp} failed"
             if [ -x "$imgpath" ]; then
               loaded=$("$imgpath" | ${pkgs.podman}/bin/podman load 2>/dev/null | awk '/Loaded image/ {print $3}') || fail "podman load ${comp} failed"
             else
@@ -143,6 +145,15 @@ let
             ${pkgs.podman}/bin/podman tag "$loaded" "${name}-${comp}:current" || fail "podman tag ${comp} failed"
           ''
         ) comps;
+        # D-017 §1: the manifest is evaluated from `source` (a locked flake
+        # input); the code is built from /srv/<name>. Warn when they disagree —
+        # the host repo's lock needs bumping and a rebuild for .bnox/ changes.
+        manifestDir = "${thing.source}/.bnox";
+        driftCheck = lib.optionalString (thing.source != "/srv/${name}") ''
+          if ! diff -rq "${manifestDir}" "/srv/${name}/.bnox" >/dev/null 2>&1; then
+            echo "bnox: WARNING ${name}: /srv/${name}/.bnox differs from the evaluated manifest (${manifestDir}); bump the host repo's lock for this thing and rebuild" >&2
+          fi
+        '';
         restartLoop = lib.concatMapStringsSep "\n" (
           comp:
           ''
@@ -160,7 +171,10 @@ let
           pkgs.systemd
           pkgs.gawk
           pkgs.coreutils
+          pkgs.diffutils
         ];
+        # G22: nix's fetcher cache under ProtectHome=read-only is unwritable
+        environment.XDG_CACHE_HOME = "/var/lib/${name}/.cache";
         serviceConfig = {
           Type = "oneshot";
           User = "root";
@@ -169,7 +183,8 @@ let
           PrivateTmp = true;
           ProtectSystem = "strict";
           ProtectHome = "read-only";
-          ReadWritePaths = "/srv/${name} /var/lib/${name} /var/lib/containers /nix/var/nix";
+          # G24: podman's runtime locks + short-name alias cache; G31: nix build logs
+          ReadWritePaths = "/srv/${name} /var/lib/${name} /var/lib/containers /nix/var/nix /nix/var/log/nix /run/lock /run/libpod /run/containers /var/cache/containers";
           IPAddressDeny = "any";
           IPAddressAllow = "127.0.0.0/8 ::1";
         };
@@ -182,9 +197,13 @@ let
           sha=$(${pkgs.git}/bin/git -c safe.directory=/srv/${name} -C /srv/${name} rev-parse HEAD) || fail "rev-parse failed"
           imgdir=/var/lib/${name}/images
           mkdir -p "$imgdir" || fail "mkdir images failed"
+          ${driftCheck}
           ${buildLoop}
           ${natsCli}/bin/nats pub "host.deploy.${name}.built" "{\"thing\":\"${name}\",\"sha\":\"$sha\"}" >/dev/null 2>&1 || fail "nats publish built failed"
           tarpath="$imgdir/$sha.tar"
+          # G25: podman save cannot overwrite an existing archive (same-sha rebuild);
+          # remove only this sha's tar — older tars are the rollback set (D-011)
+          rm -f "$tarpath"
           ${pkgs.podman}/bin/podman save -o "$tarpath" ${imageRefs} || fail "podman save failed"
           ${restartLoop}
           ${natsCli}/bin/nats pub "host.deploy.${name}.deployed" "{\"thing\":\"${name}\",\"sha\":\"$sha\"}" >/dev/null 2>&1 || true
@@ -198,6 +217,14 @@ in
     {
       systemd.services = syncServices // buildServices;
     }
+    # G21: nix's libgit2 (and git) refuse /srv checkouts owned by another user
+    # when the pipeline units run as root / the thing user; the git CLI gets
+    # -c safe.directory, libgit2 only reads the system config
+    (lib.mkIf (enabledThingsList != [ ]) {
+      environment.etc."gitconfig".text = lib.concatMapStringsSep "\n" (
+        thing: "[safe]\n\tdirectory = /srv/${thing.name}"
+      ) enabledThingsList;
+    })
     (lib.mkIf natsReady {
       systemd.services.bnox-deploy-dispatcher = {
         wantedBy = [ "multi-user.target" ];
