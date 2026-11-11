@@ -27,6 +27,9 @@ func handle(m *nats.Msg) {
 		return
 	}
 	thing, event := parts[2], parts[3]
+	if strings.Contains(thing, "_bnox_validate_") {
+		return // bnox-validate permission probe, not a deploy
+	}
 	if !validName(thing) {
 		log.Printf("rejecting bad thing name in %s", m.Subject)
 		return

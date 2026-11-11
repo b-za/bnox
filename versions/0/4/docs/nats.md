@@ -62,3 +62,13 @@ A user-level `nats` context (`~/.config/nats/context/`) silently overrides the e
 `bnox-nats-keygen` → `bnox-nats-auth` (assembles `/var/lib/bnox/nats/auth.json`, validates it with `nats-server -t`, restarts the broker only when it changed) → `nats` → `bnox-nats-streams`.
 
 A rebuild that changes permissions restarts the broker; a client connecting at that instant fails once and restarts itself seconds later, but `nixos-rebuild` may already have reported it (exit 4). Check `systemctl is-active <unit>` a few seconds later.
+
+## Checking it: `bnox-validate`
+
+```bash
+sudo bnox-validate
+```
+
+Generated from the computed permission matrix (D-020): every allow pattern becomes a concrete probe subject (wildcards replaced by the token `_bnox_validate_`), and every identity publishes every probe. The broker must accept exactly where that identity's permissions cover the probe, and reject everywhere else; an anonymous connection must be rejected. Infrastructure subjects (`$JS.*`, `_INBOX.*`) are not probed. Exit code 0 = all checks passed — part of the done rule for a bnox version.
+
+Accepted probes are real messages: they land in the target thing's stream. Things should ignore subjects containing `_bnox_validate_` (the deploy dispatcher does).

@@ -245,6 +245,52 @@ let
   # runtime file in the state dir with relative includes only
   settingsFile = (pkgs.formats.json { }).generate "nats-settings.json" config.services.nats.settings;
 
+  # ---- bnox-validate (D-020 §3) ----------------------------------------
+  # Every allow pattern in the matrix becomes one concrete probe subject
+  # (wildcards → the token _bnox_validate_). Every identity publishes every
+  # probe; the broker must accept exactly where its own allows cover the
+  # probe. Infrastructure subjects ($JS.*, _INBOX.*) are not probed.
+  # Accepted probes land in the target thing's stream like any message —
+  # things should ignore subjects carrying the _bnox_validate_ token.
+  probeToken = "_bnox_validate_";
+  concretize = p: lib.concatStringsSep "." (map (t: if t == "*" || t == ">" then probeToken else t) (lib.splitString "." p));
+  isInfra = p: lib.hasPrefix "$JS" p || lib.hasPrefix "_INBOX" p;
+  probes = lib.unique (
+    map concretize (
+      builtins.filter (p: !(isInfra p)) (
+        lib.concatMap (i: i.publish) (builtins.attrValues identities)
+      )
+    )
+  );
+  checks = lib.concatLists (
+    lib.mapAttrsToList (
+      id: i:
+      map (subject: {
+        inherit id subject;
+        expect = if lib.any (a: covers a subject) i.publish then "accept" else "reject";
+      }) probes
+    ) identities
+  );
+  validate = pkgs.writeShellApplication {
+    name = "bnox-validate";
+    runtimeInputs = [ natscli pkgs.coreutils ];
+    text = ''
+      if [ "$(id -u)" != 0 ]; then echo "bnox-validate: run as root (reads the NATS seeds)" >&2; exit 2; fi
+      export NATS_URL=nats://127.0.0.1:4222
+      pass=0; fail=0
+      check() { # expect id subject
+        if env NATS_NKEY="${stateDir}/$2.seed" nats pub "$3" "bnox-validate probe" >/dev/null 2>&1; then got=accept; else got=reject; fi
+        if [ "$got" = "$1" ]; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL: $2 publish $3 — expected $1, got $got"; fi
+      }
+      echo "== anonymous connect must be rejected"
+      if env -u NATS_NKEY nats pub "${probeToken}" x >/dev/null 2>&1; then echo "FAIL: anonymous publish accepted"; fail=$((fail+1)); else pass=$((pass+1)); fi
+      echo "== ${toString (builtins.length checks)} permission checks (${toString (builtins.length (builtins.attrNames identities))} identities × ${toString (builtins.length probes)} probes)"
+      ${lib.concatMapStringsSep "\n" (c: "check ${c.expect} ${lib.escapeShellArg c.id} ${lib.escapeShellArg c.subject}") checks}
+      echo "bnox-validate: $pass passed, $fail failed"
+      [ "$fail" = 0 ]
+    '';
+  };
+
   identityModule = {
     options = {
       publish = lib.mkOption {
@@ -336,6 +382,8 @@ in
       }) errors;
 
       services.nats.settings.host = lib.mkDefault "127.0.0.1";
+
+    environment.systemPackages = [ validate ];
 
       systemd.services = {
         nats = {
