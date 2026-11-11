@@ -42,6 +42,7 @@ let
     map (
       comp:
       lib.nameValuePair comp.serviceName {
+        after = lib.optional comp.nats "bnox-nats-keygen.service";
         serviceConfig = hardening.runnerBundle {
           ipAddressAllow =
             lib.optional comp.outboundHTTPS "any"

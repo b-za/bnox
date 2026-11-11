@@ -2,8 +2,6 @@
 let
   natsCli = pkgs.natscli;
 
-  pythonWithNats = pkgs.python3.withPackages (ps: [ ps.nats-py ]);
-
   enabledThingsList = lib.mapAttrsToList (
     thingName: thing: thing // { name = thingName; }
   ) (lib.filterAttrs (_: thing: thing.enable) config.bnox.things);
@@ -21,74 +19,24 @@ let
     lib.optional (compNames != [ ]) (thing // { inherit compNames; })
   ) enabledThingsList;
 
-  dispatcherSource = ''
-    import asyncio
-    import os
-    import re
-    import subprocess
-    import sys
+  # D-018: Go dispatcher (nats-py could not do nkey auth — G4)
+  dispatcher = pkgs.buildGoModule {
+    pname = "bnox-deploy-dispatcher";
+    version = "0.4.0";
+    src = ./dispatcher;
+    vendorHash = "sha256-nA1CVJflkPFIj2eZY/wjmDP+AN0yqXJPM+zmQmw/BqM=";
+  };
 
-    import nats
-
-    SUBJECT = "host.deploy.>"
-    THING_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
-    EVENT_SUFFIX = {
-        "changed": "-sync.service",
-        "synced": "-build.service",
-    }
-
-    async def handle(msg):
-        subject = msg.subject
-        parts = subject.split(".")
-        if len(parts) != 4 or parts[0] != "host" or parts[1] != "deploy":
-            sys.stderr.write("dispatcher: ignoring malformed subject " + subject + "\n")
-            return
-        thing = parts[2]
-        event = parts[3]
-        if not THING_RE.match(thing):
-            sys.stderr.write("dispatcher: rejecting bad thing name in " + subject + "\n")
-            return
-        suffix = EVENT_SUFFIX.get(event)
-        if suffix is None:
-            return
-        target = thing + suffix
-        try:
-            result = subprocess.run(
-                ["systemctl", "start", target],
-                check=False,
-                timeout=120,
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode != 0:
-                detail = (result.stderr or "").strip()
-                sys.stderr.write("dispatcher: systemctl start " + target + " failed: " + detail + "\n")
-        except (subprocess.SubprocessError, OSError) as exc:
-            sys.stderr.write("dispatcher: error starting " + target + ": " + str(exc) + "\n")
-
-    async def run():
-        url = os.environ.get("BNOX_NATS_URL", "nats://127.0.0.1:4222")
-        while True:
-            try:
-                nc = await nats.connect(url, name="bnox-deploy-dispatcher")
-                await nc.subscribe(SUBJECT, cb=handle)
-                await asyncio.Event().wait()
-            except Exception as exc:
-                sys.stderr.write("dispatcher: nats error: " + str(exc) + "; retrying in 5s\n")
-                await asyncio.sleep(5)
-
-    if __name__ == "__main__":
-        asyncio.run(run())
-  '';
-
-  dispatcherScript = pkgs.writeText "bnox-deploy-dispatcher.py" dispatcherSource;
+  pipelineSeed = name: "/var/lib/bnox/nats/bnox-deploy-${name}.seed";
 
   syncServices = builtins.listToAttrs (
     map (
       thing:
       let name = thing.name; in
       lib.nameValuePair "${name}-sync" {
-        after = [ "network.target" ];
+        after = [ "network.target" "bnox-nats-keygen.service" ];
+        # D-018: per-thing pipeline identity (publishes host.deploy.<name>.> only)
+        environment.NATS_NKEY = pipelineSeed name;
         path = [
           pkgs.git
           natsCli
@@ -162,7 +110,7 @@ let
         ) comps;
       in
       lib.nameValuePair "${name}-build" {
-        after = [ "network.target" ];
+        after = [ "network.target" "bnox-nats-keygen.service" ];
         path = [
           pkgs.git
           pkgs.nix
@@ -174,7 +122,10 @@ let
           pkgs.diffutils
         ];
         # G22: nix's fetcher cache under ProtectHome=read-only is unwritable
-        environment.XDG_CACHE_HOME = "/var/lib/${name}/.cache";
+        environment = {
+          XDG_CACHE_HOME = "/var/lib/${name}/.cache";
+          NATS_NKEY = pipelineSeed name; # D-018
+        };
         serviceConfig = {
           Type = "oneshot";
           User = "root";
@@ -228,17 +179,18 @@ in
     (lib.mkIf natsReady {
       systemd.services.bnox-deploy-dispatcher = {
         wantedBy = [ "multi-user.target" ];
-        after = [ "network.target" "nats.service" ];
+        after = [ "network.target" "nats.service" "bnox-nats-keygen.service" ];
         requires = [ "nats.service" ];
         environment = {
-          BNOX_NATS_URL = "nats://127.0.0.1:4222";
+          NATS_URL = "nats://127.0.0.1:4222";
+          NATS_NKEY = "/var/lib/bnox/nats/bnox-deploy-dispatcher.seed";
         };
         path = [ pkgs.systemd ];
         serviceConfig = {
           Type = "simple";
           User = "root";
           Group = "root";
-          ExecStart = "${pythonWithNats}/bin/python3 ${dispatcherScript}";
+          ExecStart = "${dispatcher}/bin/deploy-dispatcher";
           Restart = "on-failure";
           RestartSec = 5;
           NoNewPrivileges = true;

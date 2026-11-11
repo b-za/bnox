@@ -54,4 +54,4 @@ A `nats-kv` backend (pull from NATS KV, encrypted with the host key) is designed
 
 ### The implied `nats_seed` slot
 
-Things that declare `nats = true` ([things.md](./things.md)) get an extra `nats_seed` slot they did not list: bnox adds it automatically, so "declares NATS use", "gets a credential" and "gets network reach" cannot drift apart. The slot is an env file — one line, `NATS_SEED=<nkey seed>` — written by the host at runtime (keygen side; seeds never live in a repo or the store). Writing it works like any slot: the thing's service restarts.
+Things that declare `nats = true` ([things.md](./things.md)) get an extra `nats_seed` slot they did not list: bnox adds it automatically, so "declares NATS use", "gets a credential" and "gets network reach" cannot drift apart. The slot is an env file — one line, `NATS_SEED=<nkey seed>` — written by bnox at runtime (`bnox-nats-keygen`, from 0.4; seeds never live in a repo or the store — see [nats.md](./nats.md)). Writing it works like any slot: the thing's service restarts.

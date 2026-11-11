@@ -26,7 +26,7 @@ let
       comp:
       lib.nameValuePair comp.serviceName {
         wantedBy = [ "multi-user.target" ];
-        after = [ "network.target" ];
+        after = [ "network.target" ] ++ lib.optional comp.nats "bnox-nats-keygen.service";
         serviceConfig = {
           ExecStart = comp.execStart;
           User = comp.user;
@@ -34,7 +34,11 @@ let
           WorkingDirectory = "/var/lib/${comp.thing}";
           Restart = "on-failure";
           RestartSec = 5;
-          Environment = [ "HOME=/var/lib/${comp.thing}" ] ++ lib.optional comp.nats "NATS_URL=nats://127.0.0.1:4222";
+          Environment = [ "HOME=/var/lib/${comp.thing}" ] ++ lib.optionals comp.nats [
+            "NATS_URL=nats://127.0.0.1:4222"
+            # D-018: natscli wants a seed *file* (G2); readable by the thing's group
+            "NATS_NKEY=/var/lib/bnox/nats/${comp.thing}.seed"
+          ];
           # D-017 §3 (G28): slots load as env files, as in the container
           # runtime. PID 1 reads them, so root-only 0600 slot files work.
           # nats_seed is required; other slots may land after first boot

@@ -5,5 +5,6 @@
     ./secrets/default.nix
     ./things/default.nix
     ./deployment/default.nix
+    ./nats/default.nix
   ];
 }

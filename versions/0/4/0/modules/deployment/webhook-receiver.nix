@@ -154,8 +154,9 @@ in
 
       systemd.services.bnox-webhook-receiver = {
         wantedBy = [ "multi-user.target" ];
-        after = [ "network.target" ];
+        after = [ "network.target" "bnox-nats-keygen.service" ];
         environment = {
+          NATS_NKEY = "/var/lib/bnox/nats/bnox-webhook-receiver.seed"; # D-018
           BNOX_WEBHOOK_HOST = "127.0.0.1";
           BNOX_WEBHOOK_PORT = toString receiverPort;
         };
@@ -189,6 +190,7 @@ in
         wantedBy = [ "multi-user.target" ];
         after = [ "nats.service" ];
         requires = [ "nats.service" ];
+        environment.NATS_NKEY = "/var/lib/bnox/nats/ops.seed"; # D-018
         path = [ natsCli ];
         serviceConfig = {
           Type = "oneshot";

@@ -50,7 +50,6 @@ OS-level rollback is NixOS generations (boot menu entry per rebuild).
 
 Hermes-style `host-install` things self-update (`hermes update`); the pipeline ignores them.
 
-## Known limits (series 0.3)
+## NATS logins
 
-- **The pipeline publishes to NATS without credentials.** On a broker that requires logins (agenthub), `host.deploy.*` publishes are rejected; the dispatcher (nats-py) cannot use nkeys either. Fixed properly in 0/4/0 (D-018: bnox service identities); until then hosts with a locked broker wire credentials host-side.
-- **`nixos-rebuild` may exit 4 after a NATS auth change.** The broker restarts inside the switch; a unit connecting at that moment (e.g. `bnox-deploy-dispatcher`) fails once and auto-restarts seconds later, but the switch already reported it. Check `systemctl is-active <unit>` a few seconds later before chasing it.
+Every pipeline step has its own NATS identity (from 0.4, [nats.md](./nats.md)): the webhook receiver may only publish `host.deploy.*.changed`, the dispatcher only subscribes `host.deploy.>`, and each thing's sync/build publishes as `bnox-deploy-<thing>` (only `host.deploy.<thing>.>`). The dispatcher is a small Go program (the 0.3 Python one could not log in with nkeys).

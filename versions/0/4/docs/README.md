@@ -1,6 +1,6 @@
-# bnox docs — series 0.2
+# bnox docs — series 0.4
 
-Consumer documentation for bnox versions 0.2.x. Start with [getting-started.md](./getting-started.md).
+Consumer documentation for bnox versions 0.4.x. Start with [getting-started.md](./getting-started.md).
 
 | Page | What it covers |
 |---|---|
@@ -8,6 +8,7 @@ Consumer documentation for bnox versions 0.2.x. Start with [getting-started.md](
 | [host-config.md](./host-config.md) | The per-host divergence file: profiles, hardware, things, firewall |
 | [things.md](./things.md) | Hosting a "thing": shapes, runtimes, the `.bnox/` convention, fixtures |
 | [secrets.md](./secrets.md) | The two secret layers: agenix (infra) and the file backend (things) |
+| [nats.md](./nats.md) | NATS logins: subjects, streams, offers/roles/grants, identities |
 | [deployment.md](./deployment.md) | How thing updates flow: webhook → NATS → sync/build → restart |
 | [versioning.md](./versioning.md) | The `versions/<maj>/<min>/<patch>/` model, manifests, freeze rules |
 | [promotion.md](./promotion.md) | Promoting a host-specific element into bnox (opt-in or new default) |

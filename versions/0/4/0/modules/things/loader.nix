@@ -15,7 +15,12 @@ let
         deps = lib.mkDefault (manifest.deps or [ ]);
         secrets = lib.mkDefault (manifest.secrets or [ ]);
         branch = lib.mkDefault (manifest.branch or "main");
-        hardening.network.nats = lib.mkDefault (manifest.nats or false);
+        # D-018: nats = true, or { offer = {publish, subscribe}; roles = { <r> = {…}; }; }
+        hardening.network.nats = lib.mkDefault (
+          let n = manifest.nats or false; in if builtins.isAttrs n then true else n
+        );
+        nats.offer = lib.mkDefault ((if builtins.isAttrs (manifest.nats or false) then manifest.nats else { }).offer or { });
+        nats.roles = lib.mkDefault ((if builtins.isAttrs (manifest.nats or false) then manifest.nats else { }).roles or { });
       };
     };
 
