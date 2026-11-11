@@ -589,3 +589,13 @@ D-009 (Hermes) is the first use of this deviation clause.
 2. **`bnox.lib.mkImage`:** an image helper that always bakes a root `/etc/passwd`, `HOME`, and CA certificates; things use it instead of bare dockerTools.
 3. **`bnox-validate`:** generated from the computed NATS permission matrix (D-018), tests every grant and every denial at the broker; later extended to egress/inbound. Part of the done rule (D-017 §6).
 4. **Docs notes:** host repos pin bnox's nixpkgs explicitly (`follows`); `nixos-rebuild` may exit 4 when a NATS auth change restarts the broker mid-switch (G59) — check `systemctl is-active` after a few seconds.
+
+---
+
+## D-021 — Host-wide egress lockdown is opt-in (series 0.4)
+**Date:** 2026-11-11
+**Status:** accepted
+**Context:** D-019's egress rules bind bnox-generated units only (per-unit IPAddressAllow + per-thing proxies). bnox-bg's agenthub additionally runs owner-based nftables output rules (`egress.nix`) that stop everything else — stray processes, interactive users, hand-written units — from reaching ports 80/443.
+**Decision:** bnox ships it as an opt-in switch, `bnox.egress.hostLockdown` (default off), plus `hostLockdownAllowUsers`. Allowed out on 80/443: root, the egress proxies (now a static `bnox-egress` user so they can be matched), Caddy, host-install things granted direct `"any"`, and the listed users. Fail-open (policy accept + explicit drops), output hook only. Rules are rendered at unit start with numeric uids. Containers are not matched (bridge traffic is forwarded; slirp4netns runs as root) — their per-unit rules scope them.
+**Alternatives considered:** default-on (matches "locked by default", but breaks ordinary use of a desktop host like the MacBook); leave it to host repos (agent hosts would each re-implement it).
+**Consequences:** agenthub replaces its `egress.nix` with `bnox.egress.hostLockdown = true`.
